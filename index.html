@@ -1,0 +1,2441 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Расписание</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root, [data-theme="violet"]{
+  /* стандарт: сине-фиолетовая */
+  --bg:#0b0f17; --panel:#121826; --panel2:#0e1420; --line:#1f2a3d;
+  --text:#e8edf5; --muted:#8b98ad;
+  --acc:#4f8cff; --acc2:#8b5cf6;
+  --num:#3b9dff; --num-bg:rgba(59,157,255,.12);
+  --den:#b45cff; --den-bg:rgba(180,92,255,.12);
+  --ok:#34d399; --ok-bg:rgba(52,211,153,.10);
+  --bad:#f87171; --bad-bg:rgba(248,113,113,.10);
+  --top:rgba(11,15,23,.85);
+  --grad:rgba(79,140,255,.12);
+}
+[data-theme="claude"]{
+  /* тёмно-серая + оранжевый (как Claude) */
+  --bg:#2b2b2b; --panel:#3a3a3a; --panel2:#333333; --line:#4a4a4a;
+  --text:#f5f5f4; --muted:#a8a29e;
+  --acc:#d97757; --acc2:#c4654a;
+  --num:#e8a87c; --num-bg:rgba(217,119,87,.15);
+  --den:#d4a574; --den-bg:rgba(196,101,74,.12);
+  --ok:#6ee7b7; --ok-bg:rgba(110,231,183,.12);
+  --bad:#f87171; --bad-bg:rgba(248,113,113,.12);
+  --top:rgba(43,43,43,.92);
+  --grad:rgba(217,119,87,.10);
+}
+
+[data-theme="light"]{
+  /* бело-чёрная */
+  --bg:#f5f5f5; --panel:#ffffff; --panel2:#eeeeee; --line:#d0d0d0;
+  --text:#111111; --muted:#666666;
+  --acc:#222222; --acc2:#444444;
+  --num:#333; --num-bg:rgba(0,0,0,.06);
+  --den:#555; --den-bg:rgba(0,0,0,.04);
+  --ok:#15803d; --ok-bg:rgba(21,128,61,.10);
+  --bad:#b91c1c; --bad-bg:rgba(185,28,28,.08);
+  --top:rgba(255,255,255,.92);
+  --grad:rgba(0,0,0,.03);
+}
+
+[data-theme="bw"]{
+  /* чёрно-белая (инверсия светлой) */
+  --bg:#0a0a0a; --panel:#141414; --panel2:#101010; --line:#2e2e2e;
+  --text:#fafafa; --muted:#9c9c9c;
+  --acc:#ffffff; --acc2:#d0d0d0;
+  --num:#f0f0f0; --num-bg:rgba(255,255,255,.10);
+  --den:#c8c8c8; --den-bg:rgba(255,255,255,.06);
+  --ok:#86efac; --ok-bg:rgba(134,239,172,.12);
+  --bad:#fca5a5; --bad-bg:rgba(252,165,165,.12);
+  --top:rgba(10,10,10,.92);
+  --grad:rgba(255,255,255,.04);
+}
+
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+
+/* Обводка текста на пару тонов темнее */
+body, body *:not(svg):not(path){
+  --outline: color-mix(in srgb, var(--text) 55%, #000 45%);
+  text-shadow:
+    -0.55px 0 0 var(--outline),
+     0.55px 0 0 var(--outline),
+     0 -0.55px 0 var(--outline),
+     0  0.55px 0 var(--outline);
+}
+[data-theme="light"] body,
+[data-theme="light"] body *{
+  text-shadow: none !important;
+  -webkit-text-stroke: 0 !important;
+}
+
+
+:root{
+  --anim: 0.2s;
+  --anim-ease: ease;
+}
+[data-anim="off"]{ --anim: 0s; }
+[data-anim="fast"]{ --anim: 0.12s; }
+[data-anim="normal"]{ --anim: 0.22s; }
+[data-anim="smooth"]{ --anim: 0.4s; }
+.btn, .tab, .day-btn, input, select, .blk, .lesson, .status, .tag{
+  transition: background-color var(--anim) var(--anim-ease),
+              background var(--anim) var(--anim-ease),
+              color var(--anim) var(--anim-ease),
+              border-color var(--anim) var(--anim-ease),
+              opacity var(--anim) var(--anim-ease),
+              transform var(--anim) var(--anim-ease),
+              box-shadow var(--anim) var(--anim-ease),
+              filter var(--anim) var(--anim-ease);
+}
+.btn:active, .tab:active, .day-btn:active{ transform: scale(0.96); }
+.tab.on, .day-btn.on{ transition: background var(--anim) var(--anim-ease), color var(--anim) var(--anim-ease), transform var(--anim) var(--anim-ease); }
+.lesson{
+  animation: cardIn var(--anim) var(--anim-ease) both;
+}
+@keyframes cardIn{
+  from{ opacity:0; transform: translateY(8px); }
+  to{ opacity:1; transform: translateY(0); }
+}
+[data-anim="off"] .lesson{ animation: none; }
+.list-fade{ animation: fadeIn var(--anim) var(--anim-ease) both; }
+@keyframes fadeIn{
+  from{ opacity:0; }
+  to{ opacity:1; }
+}
+[data-anim="off"] .list-fade{ animation: none; }
+
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  background:radial-gradient(1200px 500px at 50% -10%,var(--grad),transparent),var(--bg);
+  color:var(--text); min-height:100vh; padding-bottom:40px;
+  letter-spacing:0.75mm;
+  transition: background var(--anim) var(--anim-ease), color var(--anim) var(--anim-ease);
+}
+.top{
+  position:sticky;top:0;z-index:50;
+  background:var(--top);backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--line);
+  padding:14px 16px 12px;
+}
+.row{display:flex;gap:10px;align-items:center}
+h1{font-size:18px;font-weight:700;flex:1}
+h1 span{background:var(--btn-grad,linear-gradient(90deg,var(--acc),var(--acc2)));-webkit-background-clip:text;background-clip:text;color:transparent}
+.btn{
+  border:1px solid var(--line);background:var(--panel);color:var(--text);
+  border-radius:10px;padding:8px 12px;font-size:14px;cursor:pointer;
+}
+.btn:active{transform:scale(.96)}
+.btn.primary{background:var(--btn-grad,linear-gradient(90deg,var(--acc),var(--acc2)));border:none;color:#fff;font-weight:700}
+.status{font-size:11px;color:var(--muted);margin-top:8px;min-height:14px}
+.status.err{color:var(--bad)}
+.controls{display:grid;grid-template-columns:1fr;gap:8px;margin-top:10px}
+@media(min-width:640px){.controls{grid-template-columns:1fr 1fr}}
+input,select{
+  width:100%;padding:11px 12px;border-radius:12px;border:1px solid var(--line);
+  background:var(--panel2);color:var(--text);font-size:14px;outline:none;appearance:none;
+}
+input:focus,select:focus{border-color:var(--acc)}
+select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath fill='%238b98ad' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:34px}
+.tabs{display:flex;gap:6px;margin-top:10px;overflow-x:auto}
+.tabs::-webkit-scrollbar{display:none}
+.tab{
+  flex-shrink:0;padding:8px 14px;border-radius:999px;font-size:13px;font-weight:600;
+  border:1px solid var(--line);background:var(--panel2);color:var(--muted);cursor:pointer;user-select:none;
+}
+.tab.on{background:var(--btn-grad,linear-gradient(90deg,var(--acc),var(--acc2)));color:#fff;border-color:transparent}
+.week-info{margin-top:10px;font-size:12px;color:var(--muted)}
+.week-info b{color:var(--text)}
+.schedtable{width:100%;border-collapse:collapse;font-size:13px;background:var(--panel);border-radius:12px;overflow:hidden}
+.schedtable th{text-align:left;padding:8px 10px;background:var(--panel2);color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.3px}
+.schedtable td{padding:8px 10px;border-top:1px solid var(--line);vertical-align:top;line-height:1.4}
+.schedtable tr:first-child td{border-top:none}
+.days{display:flex;gap:6px;overflow-x:auto;padding:14px 16px 6px}
+.days::-webkit-scrollbar{display:none}
+.day-btn{
+  flex-shrink:0;padding:9px 16px;border-radius:999px;font-size:13px;font-weight:600;
+  border:1px solid var(--line);background:var(--panel);color:var(--muted);cursor:pointer;
+}
+.day-btn.on{background:var(--acc);color:#fff;border-color:transparent}
+
+.days-wrap{display:flex;align-items:center;gap:8px;padding:14px 16px 6px}
+.days-wrap .days{padding:0;flex:1;overflow-x:auto;display:flex;gap:6px}
+
+
+.week-label{margin-top:8px;font-size:12px;color:var(--muted);line-height:1.35}
+.week-label b{color:var(--text);font-weight:600}
+.check-row{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text);margin:8px 0;cursor:pointer}
+.check-row input{width:18px;height:18px;accent-color:var(--acc)}
+
+.switch-row{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:13px;color:var(--text);margin:10px 0;cursor:pointer;user-select:none}
+.switch{position:relative;display:inline-block;flex-shrink:0;width:42px;height:24px}
+.switch input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer}
+.switch-track{position:absolute;inset:0;background:var(--panel2);border:1px solid var(--line);border-radius:999px;transition:background var(--anim) var(--anim-ease),border-color var(--anim) var(--anim-ease)}
+.switch-track::before{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:var(--muted);box-shadow:0 1px 2px rgba(0,0,0,.3);transition:transform var(--anim) var(--anim-ease),background var(--anim) var(--anim-ease)}
+.switch input:checked + .switch-track{background:var(--btn-grad,linear-gradient(90deg,var(--acc),var(--acc2)));border-color:transparent}
+.switch input:checked + .switch-track::before{transform:translateX(18px);background:#fff}
+.switch input:focus-visible + .switch-track{box-shadow:0 0 0 2px color-mix(in srgb,var(--acc) 50%,transparent)}
+
+/* sheet-bar moved to settings */
+.sheet-bar{display:none}
+.sheet-bar select{
+  width:100%;padding:10px 12px;border-radius:12px;border:1px solid var(--line);
+  background:var(--panel2);color:var(--text);font-size:13px;
+}
+
+.btn-today{
+  flex-shrink:0;padding:9px 12px;border-radius:999px;font-size:12px;font-weight:700;
+  border:1px solid var(--line);background:var(--panel);color:var(--text);cursor:pointer;
+}
+.lesson.now{
+  border-left-color:var(--ok);
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--ok) 40%,transparent);
+}
+.lesson.next{border-left-color:var(--acc2)}
+.now-banner{
+  margin:0 0 12px;padding:10px 12px;border-radius:12px;font-size:13px;line-height:1.4;
+  background:color-mix(in srgb,var(--ok) 14%,var(--panel));
+  border:1px solid color-mix(in srgb,var(--ok) 35%,var(--line));
+}
+.now-banner b{color:var(--text)}
+.grad-slider-row{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+.grad-slider-val{font-size:12px;color:var(--muted);text-align:center}
+input[type="range"].grad-range{
+  -webkit-appearance:none;appearance:none;width:100%;height:28px;background:transparent;margin:0;padding:0;
+}
+input[type="range"].grad-range:focus{outline:none}
+input[type="range"].grad-range::-webkit-slider-runnable-track{
+  height:3px;border-radius:999px;
+  background:linear-gradient(90deg,var(--acc),var(--acc2));
+  border:none;
+}
+input[type="range"].grad-range::-webkit-slider-thumb{
+  -webkit-appearance:none;appearance:none;
+  width:16px;height:16px;border-radius:50%;
+  background:var(--text);border:2px solid var(--acc);
+  margin-top:-6.5px;box-shadow:0 1px 4px rgba(0,0,0,.35);cursor:pointer;
+}
+input[type="range"].grad-range::-moz-range-track{
+  height:3px;border-radius:999px;
+  background:linear-gradient(90deg,var(--acc),var(--acc2));border:none;
+}
+input[type="range"].grad-range::-moz-range-thumb{
+  width:16px;height:16px;border-radius:50%;
+  background:var(--text);border:2px solid var(--acc);
+  box-shadow:0 1px 4px rgba(0,0,0,.35);cursor:pointer;
+}
+
+.content{padding:12px 16px}
+.content.full{padding:4px}
+.day-title{font-size:20px;font-weight:800;margin:8px 0 14px;text-transform:capitalize}
+.lesson{
+  background:linear-gradient(180deg,var(--panel),var(--panel2));
+  border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:12px;
+  border-left:4px solid var(--acc);
+}
+.lesson.cancel{border-left-color:var(--bad);background:linear-gradient(180deg,rgba(248,113,113,.07),var(--panel2))}
+.lh{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.lnum{font-weight:800;font-size:14px;color:var(--acc)}
+.lesson.cancel .lnum{color:var(--bad)}
+.ltime{font-size:12px;color:var(--muted)}
+.tag{display:inline-block;font-size:10px;font-weight:800;padding:3px 8px;border-radius:6px;margin-left:8px;letter-spacing:.05em;text-transform:uppercase}
+.tag.cancel{background:var(--bad);color:#fff}
+.tag.repl{background:var(--ok);color:#06251b}
+.blk{border-radius:10px;padding:9px 11px;margin-bottom:6px;border:1px solid}
+.blk .lab{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px}
+.blk .txt{font-size:14px;line-height:1.4}
+.blk-num{background:var(--num-bg);border-color:rgba(59,157,255,.3)}.blk-num .lab{color:var(--num)}
+.blk-den{background:var(--den-bg);border-color:rgba(180,92,255,.3)}.blk-den .lab{color:var(--den)}
+.blk-ok{background:var(--ok-bg);border-color:rgba(52,211,153,.3)}.blk-ok .lab{color:var(--ok)}
+.blk-bad{background:var(--bad-bg);border-color:rgba(248,113,113,.3)}.blk-bad .lab{color:var(--bad)}
+.blk-bad .txt{color:var(--bad);text-decoration:line-through}
+.subj{font-size:15px;line-height:1.4}
+.room{font-size:13px;color:var(--muted);margin-top:6px}
+.grp{font-size:13px;color:var(--acc);margin:4px 0;font-weight:600}
+.room b{color:var(--text)}
+.break{text-align:center;font-size:12px;color:var(--muted);padding:2px 0 10px}
+.empty,.loading,.errbox{text-align:center;padding:50px 20px;color:var(--muted);font-size:15px;line-height:1.6}
+.errbox{color:var(--bad)}
+.spin{display:inline-block;width:18px;height:18px;border:2px solid var(--line);border-top-color:var(--acc);border-radius:50%;animation:s 1s linear infinite;vertical-align:-4px;margin-right:8px}
+@keyframes s{to{transform:rotate(360deg)}}
+.loading-wrap{padding:8px 0 24px}
+.loading-head{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:18px;color:var(--muted);font-size:14px}
+.loading-head .spin{width:22px;height:22px;border-width:2.5px;margin:0}
+.sk-card{
+  background:linear-gradient(180deg,var(--panel),var(--panel2));
+  border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:12px;
+  border-left:4px solid var(--line);overflow:hidden;position:relative;
+}
+.sk-line{
+  height:12px;border-radius:6px;margin-bottom:10px;
+  background:linear-gradient(90deg,var(--panel2) 0%,var(--line) 40%,var(--panel2) 80%);
+  background-size:200% 100%;
+  animation:skShine 1.2s ease-in-out infinite;
+}
+.sk-line.short{width:40%}.sk-line.mid{width:70%}.sk-line.long{width:90%}
+.sk-line:last-child{margin-bottom:0}
+@keyframes skShine{
+  0%{background-position:100% 0}
+  100%{background-position:-100% 0}
+}
+
+.modal{
+  position:fixed;inset:0;z-index:100;display:flex;align-items:flex-end;justify-content:center;
+  opacity:0;visibility:hidden;pointer-events:none;
+  transition:opacity var(--anim) var(--anim-ease), visibility var(--anim) var(--anim-ease);
+}
+.modal.open{
+  opacity:1;visibility:visible;pointer-events:auto;
+}
+@media(min-width:560px){.modal{align-items:center}}
+.modal-backdrop{
+  position:absolute;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(4px);
+  opacity:0;transition:opacity var(--anim) var(--anim-ease);
+}
+.modal.open .modal-backdrop{opacity:1}
+.modal-card{
+  position:relative;z-index:1;width:100%;max-width:420px;
+  background:var(--panel);border:1px solid var(--line);
+  border-radius:16px 16px 0 0;box-shadow:0 -8px 40px rgba(0,0,0,.45);padding:0 0 16px;
+  transform:translateY(24px);opacity:0;
+  transition:transform var(--anim) var(--anim-ease), opacity var(--anim) var(--anim-ease);
+}
+.modal.open .modal-card{transform:translateY(0);opacity:1}
+@media(min-width:560px){
+  .modal-card{border-radius:16px;margin:16px;transform:translateY(12px) scale(.96)}
+  .modal.open .modal-card{transform:translateY(0) scale(1)}
+}
+.modal-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--line)}
+.modal-body{padding:14px 16px;max-height:70vh;overflow-y:auto}
+.modal-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin:12px 0 6px}
+.modal-label:first-child{margin-top:0}
+.load-info{font-size:12px;color:var(--muted);line-height:1.5;padding:8px 10px;background:var(--panel2);border-radius:10px;border:1px solid var(--line)}
+.load-info b{color:var(--text)}
+.load-info .ok{color:var(--ok)}
+.load-info .bad{color:var(--bad)}
+
+.color-panel{display:grid;gap:10px;margin-top:4px}
+.color-row{display:flex;align-items:center;gap:10px}
+.color-row label{flex:1;font-size:13px;color:var(--muted)}
+.color-row input[type="color"]{
+  width:44px;height:36px;padding:0;border:1px solid var(--line);
+  border-radius:10px;background:transparent;cursor:pointer;
+}
+.color-row input[type="text"]{
+  width:88px;padding:8px;font-size:12px;border-radius:8px;
+  border:1px solid var(--line);background:var(--panel2);color:var(--text);
+}
+.grad-preview{
+  height:28px;border-radius:8px;border:1px solid var(--line);
+  background:linear-gradient(90deg,var(--acc),var(--acc2));
+}
+
+
+.foot{text-align:center;padding:18px;font-size:12px;color:var(--muted)}
+.foot a{color:var(--acc);text-decoration:none}
+
+.pw-overlay{
+  position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;
+  background:radial-gradient(1200px 500px at 50% -10%,var(--grad),transparent),var(--bg);
+  padding:20px;
+}
+.pw-card{
+  width:100%;max-width:340px;background:var(--panel);border:1px solid var(--line);
+  border-radius:16px;padding:22px 20px;box-shadow:0 8px 40px rgba(0,0,0,.4);text-align:center;
+}
+.pw-lock{font-size:28px;margin-bottom:8px}
+.pw-title{font-size:15px;font-weight:700;margin-bottom:14px;color:var(--text)}
+.pw-input-wrap{position:relative}
+.pw-input{
+  width:100%;padding:11px 44px 11px 12px;border-radius:12px;border:1px solid var(--line);
+  background:var(--panel2);color:var(--text);font-size:14px;outline:none;text-align:center;letter-spacing:2px;
+}
+.pw-input:focus{border-color:var(--acc)}
+.pw-eye{
+  position:absolute;right:4px;top:50%;transform:translateY(-50%);
+  width:32px;height:32px;border-radius:8px;border:none;background:transparent;
+  color:var(--muted);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;
+}
+.pw-eye:active{transform:translateY(-50%) scale(.9)}
+.pw-err{min-height:16px;font-size:12px;color:var(--bad);margin-top:8px}
+</style>
+</head>
+<body>
+
+<div class="pw-overlay" id="pwOverlay">
+  <div class="pw-card">
+    <div class="pw-lock">🔒</div>
+    <div class="pw-title">Введите пароль для входа</div>
+    <div class="pw-input-wrap">
+      <input type="password" id="pwInput" class="pw-input" autocomplete="current-password" placeholder="Пароль" inputmode="text">
+      <button type="button" class="pw-eye" id="pwEye" title="Показать пароль">👁</button>
+    </div>
+    <button class="btn primary" id="pwSubmit" type="button" style="width:100%;margin-top:12px">Войти</button>
+    <div class="pw-err" id="pwErr"></div>
+  </div>
+</div>
+
+<div class="top">
+  <div class="row">
+    <div style="flex:1"></div>
+    <button class="btn" id="settingsBtn" title="Настройки">⚙️</button>
+    <button class="btn primary" id="ref">↻ Обновить</button>
+  </div>
+  <div class="status" id="status">Загрузка...</div>
+  <div class="controls">
+    <input id="q" type="text" placeholder="🔍 Поиск преподавателя..." disabled>
+    <select id="grp" disabled></select>
+  </div>
+  <div class="week-label" id="weekLabelMain"></div>
+</div>
+
+<div class="days-wrap">
+  <button type="button" class="btn-today" id="btnToday">Сегодня</button>
+  <div class="days" id="days"></div>
+</div>
+<div class="content" id="contentWrap">
+  <div class="day-title" id="dtitle"></div>
+  <div id="list"><div class="loading-wrap" id="loadingAnim">
+  <div class="loading-head"><span class="spin"></span>Загружаю расписание…</div>
+  <div class="sk-card"><div class="sk-line short"></div><div class="sk-line long"></div><div class="sk-line mid"></div></div>
+  <div class="sk-card"><div class="sk-line short"></div><div class="sk-line long"></div><div class="sk-line mid"></div></div>
+  <div class="sk-card"><div class="sk-line short"></div><div class="sk-line long"></div></div>
+</div></div>
+</div>
+<div class="foot">Источник: <a href="https://docs.google.com/spreadsheets/d/1RRrdDgLjqfFRYhjbxTdcJY_iNvP3ZEuu/edit" target="_blank">Google Таблица</a></div>
+
+<div id="settingsModal" class="modal" aria-hidden="true">
+  <div class="modal-backdrop" id="settingsBackdrop"></div>
+  <div class="modal-card" role="dialog" aria-modal="true">
+    <div class="modal-head">
+      <b>Настройки</b>
+      <button class="btn" id="settingsClose" type="button">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-label">Безопасность</div>
+      <label class="switch-row"><span>Запрашивать пароль при входе</span><span class="switch"><input type="checkbox" id="pwToggle"><span class="switch-track"></span></span></label>
+      <div class="modal-label">Тема</div>
+      <div class="tabs" id="themeTabs"></div>
+      <div class="modal-label">Свои цвета (RGB)</div>
+      <div class="color-panel" id="colorPanel">
+        <div class="color-row"><label>Фон</label><input type="color" id="cBg" data-var="--bg"><input type="text" id="cBgHex" maxlength="7"></div>
+        <div class="color-row"><label>Панели</label><input type="color" id="cPanel" data-var="--panel"><input type="text" id="cPanelHex" maxlength="7"></div>
+        <div class="color-row"><label>Текст</label><input type="color" id="cText" data-var="--text"><input type="text" id="cTextHex" maxlength="7"></div>
+        <div class="color-row"><label>Акцент 1</label><input type="color" id="cAcc" data-var="--acc"><input type="text" id="cAccHex" maxlength="7"></div>
+        <div class="color-row"><label>Акцент 2 (градиент)</label><input type="color" id="cAcc2" data-var="--acc2"><input type="text" id="cAcc2Hex" maxlength="7"></div>
+        <div class="grad-preview" id="gradPreview" title="Превью градиента"></div>
+        <div class="grad-slider-row">
+          <input type="range" class="grad-range" id="gradSlider" min="0" max="360" value="90" step="1">
+          <div class="grad-slider-val" id="gradSliderVal">Направление: 90°</div>
+        </div>
+        <button class="btn" type="button" id="resetColors">Сбросить цвета</button>
+      </div>
+      <div class="modal-label">Плавность</div>
+      <div class="tabs" id="animTabs"></div>
+      <div class="modal-label">Вид</div>
+      <div class="tabs" id="viewTabs"></div>
+      <div class="modal-label">Нумерация пар</div>
+      <div class="tabs" id="numTabs"></div>
+      <div class="modal-label">Неделя таблицы</div>
+      <select id="sheetSelect" style="width:100%;margin-bottom:8px"></select>
+      <div class="tabs" id="sheetActionTabs" style="margin-bottom:8px"></div>
+      <label class="switch-row"><span>Показывать прошедшие недели</span><span class="switch"><input type="checkbox" id="showPastWeeks"><span class="switch-track"></span></span></label>
+      <label class="switch-row"><span>Показывать прошедшие дни недели</span><span class="switch"><input type="checkbox" id="showPastDays"><span class="switch-track"></span></span></label>
+      <div class="modal-label">Фильтр пар</div>
+      <div class="tabs" id="weekTabs"></div>
+      <div class="week-info" id="weekInfo" style="margin-top:8px"></div>
+      <div style="margin-top:14px">
+        <button class="btn" id="clearCache" type="button">Сбросить кэш</button>
+      </div>
+      <div class="modal-label" style="margin-top:16px">Загрузка</div>
+      <div id="loadInfo" class="load-info">Нет данных о загрузке</div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+/* ================= ПОДКЛЮЧЕНИЕ (механика из рабочей версии) ================= */
+var SHEET = '1RRrdDgLjqfFRYhjbxTdcJY_iNvP3ZEuu';
+var CSV_URL  = 'https://docs.google.com/spreadsheets/d/' + SHEET + '/export?format=csv';
+var HTML_URL = 'https://docs.google.com/spreadsheets/d/' + SHEET + '/htmlview';
+var PROXIES = [
+  function(u){ return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u); },
+  function(u){ return 'https://corsproxy.io/?' + encodeURIComponent(u); },
+  function(u){ return 'https://corsproxy.io/?url=' + encodeURIComponent(u); },
+  function(u){ return 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u); },
+  function(u){ return u; }
+];
+var CACHE_TTL = 30*60*1000;
+function cacheKey(){ return 'rasp_cache_v3_' + (currentSheetName || 'default'); }
+var CACHE_KEY = 'rasp_cache_v2'; // legacy
+var sheetList = [];
+var currentSheetName = '';
+try{ currentSheetName = localStorage.getItem('rasp_sheet') || ''; }catch(e){}
+var LAST_WB = null;
+var sheetGids = {}; // полное имя листа → gid (из htmlview)
+
+/* ================= СОСТОЯНИЕ ================= */
+var DATA = null;
+var teacher = null, day = null, opts = [];
+var weekTab = 'auto';                 // auto | num | den | repl
+var detectedIsNum = null;             // из таблицы (htmlview) или null
+var weekLabel = '';
+var viewMode = localStorage.getItem('rasp_view') || 'cards';   // cards | table
+var numMode = localStorage.getItem('rasp_num') || 'sheet';     // sheet | seq
+var themeMode = localStorage.getItem('rasp_theme') || 'violet'; // violet|claude|light|bw
+var animMode = localStorage.getItem('rasp_anim') || 'normal';  // off|fast|normal|smooth
+
+var customColors = null; // {bg,panel,text,acc,acc2} or null
+var gradAngle = localStorage.getItem('rasp_grad') || '90'; // deg
+try{
+  var cc = localStorage.getItem('rasp_colors');
+  if(cc) customColors = JSON.parse(cc);
+}catch(e){}
+
+/* ================= ПАРОЛЬ ================= */
+var PW_SECRET = 'Rasp1san1e₽ar';
+var pwRequired = true; // по умолчанию включено
+try{
+  var pwv = localStorage.getItem('rasp_pw_on');
+  pwRequired = (pwv===null) ? true : pwv==='1';
+}catch(e){}
+var pwUnlocked = false;
+try{ pwUnlocked = sessionStorage.getItem('rasp_pw_unlocked')==='1'; }catch(e){}
+
+function showPwGate(){
+  var ov=document.getElementById('pwOverlay');
+  if(!ov) return;
+  ov.style.display='flex';
+  document.documentElement.style.overflow='hidden';
+  var inp=document.getElementById('pwInput');
+  if(inp) setTimeout(function(){ inp.focus(); }, 60);
+}
+function hidePwGate(){
+  var ov=document.getElementById('pwOverlay');
+  if(ov) ov.style.display='none';
+  document.documentElement.style.overflow='';
+}
+function tryPwSubmit(){
+  var inp=document.getElementById('pwInput'), err=document.getElementById('pwErr');
+  var v = inp ? inp.value : '';
+  if(v === PW_SECRET){
+    pwUnlocked = true;
+    try{ sessionStorage.setItem('rasp_pw_unlocked','1'); }catch(e){}
+    if(err) err.textContent='';
+    hidePwGate();
+    load(false);
+  } else {
+    if(err) err.textContent='Неверный пароль';
+    if(inp){ inp.value=''; inp.focus(); }
+  }
+}
+function bindPwGate(){
+  var btn=document.getElementById('pwSubmit'), inp=document.getElementById('pwInput');
+  if(btn) btn.onclick=tryPwSubmit;
+  if(inp) inp.onkeydown=function(e){ if(e.key==='Enter') tryPwSubmit(); };
+  var eye=document.getElementById('pwEye');
+  if(eye && inp){
+    eye.onclick=function(){
+      var show = inp.type==='password';
+      inp.type = show ? 'text' : 'password';
+      eye.textContent = show ? '🙈' : '👁';
+      eye.title = show ? 'Скрыть пароль' : 'Показать пароль';
+      inp.focus();
+    };
+  }
+}
+function bindPwToggle(){
+  var chk=document.getElementById('pwToggle');
+  if(!chk || chk._bound) return;
+  chk._bound = true;
+  chk.checked = !!pwRequired;
+  chk.onchange = function(){
+    pwRequired = !!chk.checked;
+    try{ localStorage.setItem('rasp_pw_on', pwRequired?'1':'0'); }catch(e){}
+  };
+}
+
+
+var $ = function(id){ return document.getElementById(id); };
+var statusEl=$('status'), qEl=$('q'), grpEl=$('grp'), weekTabsEl=$('weekTabs'),
+    weekInfoEl=$('weekInfo'), loadInfoEl=$('loadInfo'), daysEl=$('days'), dtitleEl=$('dtitle'), listEl=$('list'),
+    viewTabsEl=$('viewTabs'), numTabsEl=$('numTabs'), themeTabsEl=$('themeTabs'), animTabsEl=$('animTabs'), settingsBtnEl=$('settingsBtn'),
+    contentWrapEl=$('contentWrap');
+
+var settingsModalEl=$('settingsModal');
+function openSettings(){
+  if(!settingsModalEl) return;
+  buildWeekTabs();
+  buildModeTabs();
+  buildSheetSelect(sheetList);
+  bindPastDaysToggle();
+  bindPwToggle();
+  updateLoadInfo();
+  syncColorInputs();
+  settingsModalEl.setAttribute('aria-hidden','false');
+  // reflow then animate
+  void settingsModalEl.offsetWidth;
+  settingsModalEl.classList.add('open');
+}
+function closeSettings(){
+  if(!settingsModalEl) return;
+  settingsModalEl.classList.remove('open');
+  settingsModalEl.setAttribute('aria-hidden','true');
+}
+if(settingsBtnEl) settingsBtnEl.onclick=openSettings;
+var settingsCloseEl=$('settingsClose');
+var settingsBackdropEl=$('settingsBackdrop');
+if(settingsCloseEl) settingsCloseEl.onclick=closeSettings;
+if(settingsBackdropEl) settingsBackdropEl.onclick=closeSettings;
+document.addEventListener('keydown', function(e){
+  if(e.key==='Escape') closeSettings();
+});
+
+function esc(t){ var d=document.createElement('div'); d.textContent=t||''; return d.innerHTML; }
+function setStatus(m, err){ statusEl.textContent=m; statusEl.className='status'+(err?' err':''); try{updateLoadInfo();}catch(e){} }
+
+function showLoading(msg){
+  if(!listEl) return;
+  if(dtitleEl) dtitleEl.textContent = '';
+  listEl.innerHTML =
+    '<div class="loading-wrap">'+
+      '<div class="loading-head"><span class="spin"></span>'+esc(msg||'Загружаю расписание…')+'</div>'+
+      '<div class="sk-card"><div class="sk-line short"></div><div class="sk-line long"></div><div class="sk-line mid"></div></div>'+
+      '<div class="sk-card"><div class="sk-line short"></div><div class="sk-line long"></div><div class="sk-line mid"></div></div>'+
+      '<div class="sk-card"><div class="sk-line short"></div><div class="sk-line long"></div></div>'+
+    '</div>';
+}
+
+/* ================= ЗАГРУЗКА (быстрая) ================= */
+function withTimeout(promise, ms){
+  return Promise.race([promise, new Promise(function(_,rej){ setTimeout(function(){rej(new Error('timeout'));}, ms); })]);
+}
+function fetchText(url, ms){
+  return withTimeout(fetch(url, {cache:'no-store'}).then(function(res){
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    return res.text();
+  }), ms);
+}
+function fetchThroughProxies(url, ms){
+  // Параллельно: кто ответил первым валидными данными — тот и победил
+  ms = ms || 7000;
+  var preferred = null;
+  try { preferred = localStorage.getItem('rasp_ok_proxy'); } catch(e){}
+  var order = PROXIES.map(function(fn, idx){ return {fn:fn, idx:idx}; });
+  if(preferred !== null){
+    var pi = parseInt(preferred, 10);
+    if(!isNaN(pi) && pi >= 0 && pi < order.length){
+      order = [order[pi]].concat(order.filter(function(o){ return o.idx !== pi; }));
+    }
+  }
+  var errs = [];
+  return new Promise(function(resolve, reject){
+    var left = order.length, done = false;
+    if(!left) return reject(new Error('нет источников'));
+    order.forEach(function(o){
+      fetchText(o.fn(url), ms).then(function(txt){
+        if(done) return;
+        if(!txt || txt.length < 50) throw new Error('пусто');
+        if(txt.trim().charAt(0) === '<') throw new Error('получен HTML вместо данных');
+        done = true;
+        try { localStorage.setItem('rasp_ok_proxy', String(o.idx)); } catch(e){}
+        resolve(txt);
+      }).catch(function(e){
+        errs.push('#'+o.idx+':'+(e&&e.message?e.message:e));
+        left--;
+        if(!done && left <= 0) reject(new Error('Все источники недоступны: '+errs.join(' | ')));
+      });
+    });
+  });
+}
+
+function fetchBinary(url, ms){
+  return withTimeout(fetch(url, {cache:'no-store'}).then(function(res){
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    return res.arrayBuffer();
+  }), ms);
+}
+function fetchBinaryThroughProxies(url, ms){
+  ms = ms || 10000;
+  var preferred = null;
+  try { preferred = localStorage.getItem('rasp_ok_proxy'); } catch(e){}
+  var order = PROXIES.map(function(fn, idx){ return {fn:fn, idx:idx}; });
+  if(preferred !== null){
+    var pi = parseInt(preferred, 10);
+    if(!isNaN(pi) && pi >= 0 && pi < order.length){
+      order = [order[pi]].concat(order.filter(function(o){ return o.idx !== pi; }));
+    }
+  }
+  var errs = [];
+  return new Promise(function(resolve, reject){
+    var left = order.length, done = false;
+    if(!left) return reject(new Error('нет источников'));
+    order.forEach(function(o){
+      fetchBinary(o.fn(url), ms).then(function(buf){
+        if(done) return;
+        if(!buf || buf.byteLength < 200) throw new Error('пусто');
+        done = true;
+        try { localStorage.setItem('rasp_ok_proxy', String(o.idx)); } catch(e){}
+        resolve(buf);
+      }).catch(function(e){
+        errs.push('#'+o.idx+':'+(e&&e.message?e.message:e));
+        left--;
+        if(!done && left <= 0) reject(new Error('Все источники недоступны: '+errs.join(' | ')));
+      });
+    });
+  });
+}
+
+// Настоящий "id ячейки" — из объединённых диапазонов (merge) реального xlsx-экспорта
+// таблицы. Это структурированный формат (zip+XML), а не угаданный HTML — merges там
+// хранятся честно, без парсинга разметки. XLSMERGES[r+','+c] = true значит "эта ячейка —
+// НЕ левый верхний угол своего объединения, а продолжение" (т.е. "тот же id", что и
+// ячейка над/слева от неё в рамках merge-диапазона).
+// Листы-недели: имя содержит диапазон дат (14.09-19.09 …). Служебные
+// «Основное», «Лист1» и т.п. в селектор не пускаем.
+function isWeekSheetName(name){
+  return !!parseWeekRange(name);
+}
+function sheetListFromWb(wb){
+  var all = (wb.SheetNames || []).map(function(n, i){ return { name: n, idx: i }; });
+  var weeks = all.filter(function(s){ return isWeekSheetName(s.name); });
+  // если вдруг ни одного с датами — показать все, чтобы не остаться без выбора
+  return weeks.length ? weeks : all;
+}
+function detectNumFromSheetName(name){
+  if(!name) return null;
+  if(/числител/i.test(name)) return true;
+  if(/знаменател/i.test(name)) return false;
+  return null;
+}
+function applyDetectedWeekType(name){
+  var d = detectNumFromSheetName(name);
+  if(d !== null){
+    detectedIsNum = d;
+    weekLabel = shortWeekName(name) + (d ? ' (числитель)' : ' (знаменатель)');
+  }
+}
+
+function fetchXlsxMerges(){
+  if(typeof XLSX === 'undefined') return Promise.resolve({merges:null, sheets:[], diag:{xlsxLibMissing:true}});
+  var url = 'https://docs.google.com/spreadsheets/d/'+SHEET+'/export?format=xlsx';
+  // xlsx тяжёлый — даём больше времени, иначе список недель часто пустой
+  return fetchBinaryThroughProxies(url, 15000).then(function(buf){
+    // cellDates: даты → Date, иначе Excel-serial и дни недели теряются
+    var wb = XLSX.read(buf, {type:'array', cellDates:true, cellNF:false, cellText:false});
+    LAST_WB = wb;
+    var sheets = sheetListFromWb(wb);
+    var wsName = null;
+    if(currentSheetName && wb.SheetNames.indexOf(currentSheetName) >= 0){
+      wsName = currentSheetName;
+    } else {
+      wsName = findCurrentSheetName(sheets) || (sheets[0] && sheets[0].name) || wb.SheetNames[0];
+    }
+    var ws = wb.Sheets[wsName] || wb.Sheets[wb.SheetNames[0]];
+    var ranges = (ws && ws['!merges']) || [];
+    var carried = {};
+    ranges.forEach(function(m){
+      for(var r=m.s.r; r<=m.e.r; r++){
+        for(var c=m.s.c; c<=m.e.c; c++){
+          if(r===m.s.r && c===m.s.c) continue;
+          carried[r+','+c] = true;
+        }
+      }
+    });
+    return {merges: carried, sheets: sheets, diag:{sheetName:wsName, mergesCount:ranges.length}};
+  }).catch(function(e){
+    return {merges:null, sheets:[], diag:{fetchFailed:true, error:String(e&&e.message||e)}};
+  });
+}
+
+/** Excel serial → календарные Y,M,D без сдвига часового пояса */
+function excelSerialParts(n){
+  var utc = new Date(Math.round((n - 25569) * 86400 * 1000));
+  return {y: utc.getUTCFullYear(), m: utc.getUTCMonth(), d: utc.getUTCDate()};
+}
+function excelSerialToDate(n){
+  var p = excelSerialParts(n);
+  return new Date(p.y, p.m, p.d);
+}
+var RU_DAYS = ['воскресенье','понедельник','вторник','среда','четверг','пятница','суббота'];
+/**
+ * Дата из таблицы = календарный день без времени.
+ * Берём UTC-компоненты (SheetJS/Excel обычно отдают полночь UTC),
+ * иначе в западных TZ понедельник «уедет» в воскресенье.
+ */
+function calendarParts(d){
+  if(!(d instanceof Date) || isNaN(d.getTime())) return null;
+  // Если время ровно 00:00 UTC — это календарная дата из Excel
+  if(d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0){
+    return {y: d.getUTCFullYear(), m: d.getUTCMonth(), d: d.getUTCDate()};
+  }
+  // Иначе локальная календарная дата
+  return {y: d.getFullYear(), m: d.getMonth(), d: d.getDate()};
+}
+/** Дата → «понедельник 14.09» */
+function formatRuDayDate(d){
+  var p = calendarParts(d);
+  if(!p) return '';
+  // день недели от чисто календарной UTC-даты — без TZ-сдвига
+  var wd = new Date(Date.UTC(p.y, p.m, p.d)).getUTCDay();
+  var dd = p.d < 10 ? '0'+p.d : String(p.d);
+  var mm = (p.m+1) < 10 ? '0'+(p.m+1) : String(p.m+1);
+  return RU_DAYS[wd] + ' ' + dd + '.' + mm;
+}
+function cellToString(cell, colIndex){
+  if(!cell || cell.v === undefined || cell.v === null) return '';
+  var v = cell.v;
+  // Date object (cellDates:true)
+  if(v instanceof Date && !isNaN(v.getTime())){
+    if(colIndex === 0) return formatRuDayDate(v);
+    var p = calendarParts(v);
+    if(!p) return '';
+    var dd = p.d < 10 ? '0'+p.d : String(p.d);
+    var mm = (p.m+1) < 10 ? '0'+(p.m+1) : String(p.m+1);
+    return dd+'.'+mm;
+  }
+  // Excel serial в колонке дней
+  if(typeof v === 'number' && colIndex === 0 && v > 30000 && v < 60000){
+    var p2 = excelSerialParts(v);
+    var wd = new Date(Date.UTC(p2.y, p2.m, p2.d)).getUTCDay();
+    var dd2 = p2.d < 10 ? '0'+p2.d : String(p2.d);
+    var mm2 = (p2.m+1) < 10 ? '0'+(p2.m+1) : String(p2.m+1);
+    return RU_DAYS[wd] + ' ' + dd2 + '.' + mm2;
+  }
+  if(typeof v === 'number'){
+    if(Math.abs(v - Math.round(v)) < 1e-9) return String(Math.round(v));
+    return String(v);
+  }
+  return String(v);
+}
+/** Находит имя листа в workbook даже если оно усечено Google при экспорте */
+function resolveWbSheetName(sheetName){
+  if(!LAST_WB || !sheetName) return null;
+  if(LAST_WB.Sheets[sheetName]) return sheetName;
+  var short = shortWeekName(sheetName);
+  var names = LAST_WB.SheetNames || [];
+  for(var i=0;i<names.length;i++){
+    if(shortWeekName(names[i]) === short) return names[i];
+    if(names[i].indexOf(short) === 0 || sheetName.indexOf(names[i]) === 0) return names[i];
+  }
+  return null;
+}
+/** Строки листа xlsx с нормализованными днями недели */
+function rowsFromWorkbook(sheetName){
+  var real = resolveWbSheetName(sheetName);
+  if(!real) return null;
+  var ws = LAST_WB.Sheets[real];
+  var ref = ws['!ref'];
+  if(!ref) return null;
+  var range = XLSX.utils.decode_range(ref);
+  var rows = [];
+  for(var R = range.s.r; R <= range.e.r; R++){
+    var row = [];
+    for(var C = range.s.c; C <= range.e.c; C++){
+      var addr = XLSX.utils.encode_cell({r:R, c:C});
+      row.push(cellToString(ws[addr], C));
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+/** CSV выбранного листа (для кэша); дни уже нормализованы */
+function csvFromWorkbook(sheetName){
+  var rows = rowsFromWorkbook(sheetName);
+  if(!rows || !rows.length) return null;
+  // простой CSV: экранируем кавычки
+  return rows.map(function(row){
+    return row.map(function(cell){
+      var s = String(cell == null ? '' : cell);
+      if(/[",\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+      return s;
+    }).join(',');
+  }).join('\n');
+}
+function mergesFromWorkbook(sheetName){
+  var real = resolveWbSheetName(sheetName);
+  if(!real) return null;
+  var ranges = LAST_WB.Sheets[real]['!merges'] || [];
+  var carried = {};
+  ranges.forEach(function(m){
+    for(var r=m.s.r; r<=m.e.r; r++){
+      for(var c=m.s.c; c<=m.e.c; c++){
+        if(r===m.s.r && c===m.s.c) continue;
+        carried[r+','+c] = true;
+      }
+    }
+  });
+  return carried;
+}
+function updateWeekLabelMain(){
+  var el = $('weekLabelMain');
+  if(!el) return;
+  if(!currentSheetName){ el.innerHTML = ''; return; }
+  var short = shortWeekName(currentSheetName);
+  var full = currentSheetName;
+  if(short && short !== full){
+    el.innerHTML = 'Неделя: <b>'+esc(short)+'</b> · <span style="color:var(--muted)">'+esc(full)+'</span>';
+  } else {
+    el.innerHTML = 'Неделя: <b>'+esc(full)+'</b>';
+  }
+}
+var sheetDataReady = false; // true после успешного применения листа из xlsx — CSV больше не перетирает
+
+/** Список видимых листов + gid из htmlview (имена полные, CSV по gid — с нормальными днями) */
+function fetchSheetListFromHtml(){
+  return fetchThroughProxies(HTML_URL, 8000).then(function(page){
+    var items = [];
+    var re = /items\.push\(\{name:\s*"([^"]+)",\s*pageUrl:\s*"([^"]+)"/g;
+    var m;
+    while((m = re.exec(page))){
+      var name = m[1].replace(/\\u([0-9a-fA-F]{4})/g, function(_,h){ return String.fromCharCode(parseInt(h,16)); }).trim();
+      var pageUrl = m[2].replace(/\\\//g, '/');
+      var gm = pageUrl.match(/gid=(\d+)/);
+      var gid = gm ? gm[1] : null;
+      if(name && gid){
+        items.push({name: name, gid: gid, idx: items.length});
+        sheetGids[name] = gid;
+        // также по короткому ключу дат, чтобы матчить усечённые имена из xlsx
+        var short = shortWeekName(name);
+        if(short) sheetGids[short] = gid;
+      }
+    }
+    return items.filter(function(s){ return isWeekSheetName(s.name); });
+  }).catch(function(){ return []; });
+}
+function resolveGid(sheetName){
+  if(!sheetName) return null;
+  if(sheetGids[sheetName]) return sheetGids[sheetName];
+  var short = shortWeekName(sheetName);
+  if(short && sheetGids[short]) return sheetGids[short];
+  // нечёткий матч по префиксу дат
+  var keys = Object.keys(sheetGids);
+  for(var i=0;i<keys.length;i++){
+    if(keys[i].indexOf(short) === 0 || sheetName.indexOf(keys[i]) === 0 || keys[i].indexOf(sheetName) === 0){
+      return sheetGids[keys[i]];
+    }
+  }
+  return null;
+}
+function csvUrlForSheet(sheetName){
+  var gid = resolveGid(sheetName);
+  if(gid) return 'https://docs.google.com/spreadsheets/d/'+SHEET+'/export?format=csv&gid='+gid;
+  return null;
+}
+
+function applySheetByName(name, forceReload){
+  if(!name) return;
+  currentSheetName = name;
+  try{ localStorage.setItem('rasp_sheet', currentSheetName); }catch(e){}
+  applyDetectedWeekType(name);
+  updateWeekLabelMain();
+  setStatus('Неделя: '+shortWeekName(name)+' · загружаю…');
+  showLoading('Загружаю неделю '+shortWeekName(name)+'…');
+
+  // 1) Из xlsx в памяти (с нормализованными днями)
+  var csv = csvFromWorkbook(name);
+  if(csv && csv.length > 100){
+    var mrg = mergesFromWorkbook(name);
+    if(mrg) XLSMERGES = mrg;
+    writeCache(csv, mrg, {sheetName: name, mergesCount: mrg ? Object.keys(mrg).length : 0});
+    try{
+      applyData(csv);
+      sheetDataReady = true;
+      setStatus('Неделя: '+shortWeekName(name)+' · '+new Date().toLocaleString('ru-RU'));
+    }catch(err){
+      setStatus('Ошибка разбора листа', true);
+      console.error(err);
+    }
+    return;
+  }
+
+  // 2) CSV конкретной недели по gid (если знаем)
+  var gidUrl = csvUrlForSheet(name);
+  if(gidUrl){
+    fetchThroughProxies(gidUrl, 10000).then(function(text){
+      if(!text || text.length < 100) throw new Error('пустой csv');
+      writeCache(text, undefined, {sheetName: name, via: 'gid'});
+      applyData(text);
+      sheetDataReady = true;
+      setStatus('Неделя: '+shortWeekName(name)+' · '+new Date().toLocaleString('ru-RU'));
+    }).catch(function(e){
+      setStatus('Не удалось загрузить неделю: '+(e&&e.message?e.message:e), true);
+      if(forceReload){ sheetDataReady = false; load(true); }
+    });
+    return;
+  }
+
+  // 3) xlsx ещё не в памяти — полная перезагрузка
+  if(forceReload){
+    sheetDataReady = false;
+    load(true);
+  }
+}
+function buildSheetSelect(sheets){
+  var sel = $('sheetSelect');
+  sheetList = sortSheetsByDate(sheets || sheetList || []);
+  if(!sel){ updateWeekLabelMain(); return; }
+
+  // фильтр прошедших
+  var visible = sheetList.filter(function(s){
+    return showPastWeeks || !isPastWeek(s.name);
+  });
+  // если всё прошлое скрыто и список пуст — показать все
+  if(!visible.length) visible = sheetList.slice();
+
+  sel.innerHTML = '';
+  visible.forEach(function(s){
+    var o = document.createElement('option');
+    o.value = s.name;
+    var mark = isCurrentWeek(s.name) ? ' · сейчас' : (isPastWeek(s.name) ? ' · прошл.' : '');
+    var half = /числител/i.test(s.name) ? ' · числ.' : (/знаменател/i.test(s.name) ? ' · знам.' : '');
+    o.textContent = shortWeekName(s.name) + half + mark;
+    if(s.name === currentSheetName) o.selected = true;
+    sel.appendChild(o);
+  });
+
+  if(!currentSheetName && sheetList.length){
+    currentSheetName = findCurrentSheetName(sheetList) || sheetList[0].name;
+  }
+  // если текущий скрыт (прошлый) — переключить на актуальную
+  if(currentSheetName && !showPastWeeks && isPastWeek(currentSheetName)){
+    var cur = findCurrentSheetName(sheetList);
+    if(cur && cur !== currentSheetName){
+      currentSheetName = cur;
+      applySheetByName(currentSheetName, false);
+    }
+  }
+  if(currentSheetName){
+    try{ sel.value = currentSheetName; }catch(e){}
+  }
+  updateWeekLabelMain();
+
+  sel.onchange = function(){
+    applySheetByName(sel.value, true);
+  };
+
+  // кнопки: текущая неделя
+  var act = $('sheetActionTabs');
+  if(act){
+    act.innerHTML = '';
+    var b = document.createElement('div');
+    b.className = 'tab';
+    b.textContent = 'Текущая неделя';
+    b.onclick = function(){
+      var cur = findCurrentSheetName(sheetList);
+      if(!cur){ setStatus('Текущая неделя не найдена'); return; }
+      applySheetByName(cur, true);
+      buildSheetSelect(sheetList);
+    };
+    act.appendChild(b);
+  }
+
+  var chk = $('showPastWeeks');
+  if(chk){
+    chk.checked = !!showPastWeeks;
+    chk.onchange = function(){
+      showPastWeeks = !!chk.checked;
+      try{ localStorage.setItem('rasp_show_past', showPastWeeks ? '1' : '0'); }catch(e){}
+      buildSheetSelect(sheetList);
+    };
+  }
+}
+
+function readCache(){
+  try{
+    var c = JSON.parse(localStorage.getItem(cacheKey()) || localStorage.getItem(CACHE_KEY) || 'null');
+    if(c && c.csv && c.csv.length > 1000) return c;
+  }catch(e){}
+  return null;
+}
+function writeCache(csv, merges, xlsxDiag){
+  try{
+    var prev = readCache() || {};
+    localStorage.setItem(cacheKey(), JSON.stringify({
+      ts: Date.now(),
+      csv: csv || prev.csv,
+      merges: merges !== undefined ? merges : prev.merges,
+      xlsxDiag: xlsxDiag !== undefined ? xlsxDiag : prev.xlsxDiag
+    }));
+  }catch(e){}
+}
+function fetchCSV(force){
+  if(!force){
+    var c = readCache();
+    if(c && (Date.now()-c.ts) < CACHE_TTL){
+      if(c.merges) XLSMERGES = c.merges;
+      if(c.xlsxDiag) LASTXLSXDIAG = c.xlsxDiag;
+      return Promise.resolve({csv:c.csv, fromCache:true});
+    }
+  }
+  return fetchThroughProxies(CSV_URL, 6000).then(function(csv){
+    writeCache(csv, undefined, undefined);
+    return {csv:csv, fromCache:false};
+  });
+}
+/* ---- доп. сигнал отмены: красный текст ячейки (помимо слова "отмена") ----
+   Best-effort: тянем ту же html-страницу, ищем элементы с инлайн-цветом,
+   похожим на красный, и запоминаем их текст (построчно). Если страница
+   не парсится как реальная таблица (напр. это JS-приложение, а не статичный
+   html) — просто ничего не найдём и всё продолжит работать по слову "отмена". */
+var REDLINES = new Set();
+var COLORGRID = null; // выровненная сетка цветов фона ячеек из html-версии, или null если недоступна
+var LASTDIAG = null;  // подробная диагностика последней загрузки html-страницы (для отладки)
+var XLSMERGES = null; // {r+','+c: true} — настоящие merge-диапазоны из xlsx-экспорта (надёжнее html)
+var LASTXLSXDIAG = null;
+function elText(el){
+  var html = el.innerHTML || '';
+  html = html.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(div|p|li)>/gi, '\n');
+  var tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  return (tmp.textContent || '').replace(/\u00a0/g, ' ');
+}
+function isRedColor(c){
+  var r,g,b;
+  if(c[0]==='#'){
+    var hex=c.slice(1);
+    if(hex.length===3) hex=hex.split('').map(function(ch){return ch+ch;}).join('');
+    if(hex.length<6) return false;
+    r=parseInt(hex.slice(0,2),16); g=parseInt(hex.slice(2,4),16); b=parseInt(hex.slice(4,6),16);
+  } else {
+    var mm=c.match(/rgb\((\d+),\s*(\d+),\s*(\d+)/i);
+    if(!mm) return false;
+    r=+mm[1]; g=+mm[2]; b=+mm[3];
+  }
+  return r>130 && (r-g)>40 && (r-b)>40;
+}
+
+/* Единый разбор html-страницы: подпись недели + красные строки — одним запросом,
+   чтобы не дёргать сеть дважды за одним и тем же. */
+function normColor(c){ return String(c).replace(/\s+/g,'').toLowerCase(); }
+
+function cellBg(td){
+  var st = td.getAttribute('style')||'';
+  var m = st.match(/background-color\s*:\s*(#[0-9a-fA-F]{3,6}|rgba?\([^)]+\))/i);
+  if(m) return normColor(m[1]);
+  var bgAttr = td.getAttribute('bgcolor');
+  if(bgAttr) return normColor(bgAttr);
+  return null;
+}
+
+// Разворачивает <table> (с учётом rowspan/colspan) в плоскую сетку [row][col] = {bg,carried},
+// выровненную по тем же индексам строк/столбцов, что и rows[] из CSV того же листа.
+// carried=true значит "эта позиция — не своя ячейка, а продолжение rowspan-мерджа сверху"
+// (т.е. в исходнике это буквально ОДНА объединённая ячейка на 2 строки).
+function htmlTableToGrid(table){
+  var trs = table.querySelectorAll('tr');
+  var grid = [];
+  var carry = []; // carry[col] = {remaining, bg}
+  for(var r=0; r<trs.length; r++){
+    var tds = trs[r].querySelectorAll('td,th');
+    var rowArr = [];
+    var c = 0, ti = 0;
+    while(ti < tds.length || (carry[c] && carry[c].remaining>0)){
+      if(carry[c] && carry[c].remaining>0){
+        rowArr[c] = {bg:carry[c].bg, carried:true};
+        carry[c].remaining--;
+        c++;
+        continue;
+      }
+      if(ti>=tds.length){ c++; continue; }
+      var td = tds[ti++];
+      var cs = parseInt(td.getAttribute('colspan')||'1',10)||1;
+      var rs = parseInt(td.getAttribute('rowspan')||'1',10)||1;
+      var bg = cellBg(td);
+      for(var k=0;k<cs;k++){
+        rowArr[c] = {bg:bg, carried:false};
+        if(rs>1) carry[c] = {remaining:rs-1, bg:bg};
+        c++;
+      }
+    }
+    grid.push(rowArr);
+  }
+  return grid;
+}
+
+function fetchHtmlExtras(){
+  return fetchThroughProxies(HTML_URL, 6000).then(function(page){
+    var diag = {pageLen: page.length, tablesFound:0, bestRows:0, parseOk:false, domOk:false};
+    var label = null;
+    var m = page.match(/(\d{1,2}\.\d{2}\s*-\s*\d{1,2}\.\d{2}\s*\([^)]*(?:Числитель|Знаменатель)[^)]*\))/i)
+         || page.match(/name:\s*"([^"]*(?:Числитель|Знаменатель)[^"]*)"/i);
+    if(m) label = m[1].replace(/\s+/g,' ').trim();
+
+    var redSet = new Set();
+    var colorGrid = null;
+    try{
+      var doc = new DOMParser().parseFromString(page, 'text/html');
+      diag.domOk = true;
+      var nodes = doc.querySelectorAll('[style]');
+      nodes.forEach(function(el){
+        var st = el.getAttribute('style') || '';
+        var mm = st.match(/color\s*:\s*(#[0-9a-fA-F]{3,6}|rgb\([^)]+\))/i);
+        if(!mm || !isRedColor(mm[1])) return;
+        elText(el).split('\n').map(function(l){return l.replace(/[ \t]+/g,' ').trim();})
+          .filter(Boolean).forEach(function(l){ redSet.add(l); });
+      });
+
+      // берём самую большую таблицу на странице (основная сетка расписания)
+      var tables = doc.querySelectorAll('table');
+      diag.tablesFound = tables.length;
+      var best=null, bestRows=0;
+      tables.forEach(function(t){
+        var n=t.querySelectorAll('tr').length;
+        if(n>bestRows){bestRows=n;best=t;}
+      });
+      diag.bestRows = bestRows;
+      if(best && bestRows>5){ colorGrid = htmlTableToGrid(best); diag.parseOk = true; }
+    }catch(e){ diag.error = String(e && e.message || e); }
+
+    return {label:label, redLines:redSet, colorGrid:colorGrid, diag:diag};
+  }).catch(function(e){
+    return {label:null, redLines:new Set(), colorGrid:null, diag:{fetchFailed:true, error:String(e&&e.message||e)}};
+  });
+}
+
+
+/* ================= ПАРСИНГ (механика из рабочей версии) ================= */
+function parseCSV(text){
+  var rows=[], row=[], cell='', q=false;
+  for(var i=0;i<text.length;i++){
+    var c=text[i], n=text[i+1];
+    if(q){
+      if(c==='"'&&n==='"'){cell+='"';i++;}
+      else if(c==='"')q=false;
+      else cell+=c;
+    }else{
+      if(c==='"')q=true;
+      else if(c===','){row.push(cell);cell='';}
+      else if(c==='\n'||(c==='\r'&&n==='\n')){if(c==='\r')i++;row.push(cell);rows.push(row);row=[];cell='';}
+      else if(c==='\r'){row.push(cell);rows.push(row);row=[];cell='';}
+      else cell+=c;
+    }
+  }
+  if(cell||row.length){row.push(cell);rows.push(row);}
+  return rows;
+}
+
+// Код предмета: 2-6 заглавных букв подряд + точка + цифра (ОП.08, МДК.01.01, СГЦ.03 и т.д.) —
+// именно по этому "заглавные буквы подряд + номер" мы понимаем, что началось НОВОЕ название предмета.
+var CODE = /^([A-ZА-ЯЁ]{2,6}\.){1,3}\s*\d/;
+
+// ФИО преподавателя: "Фамилия И.О." (возможна двойная фамилия через дефис).
+// Нестрогое совпадение — только по форме строки, без списка фамилий.
+var FIO_RE = /^[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?\s+[А-ЯЁ]\.\s?[А-ЯЁ]\.?$/;
+
+// Находит среди строк первую, похожую на ФИО, вынимает её отдельно.
+// Возвращает {teacher, rest} — rest это исходные строки БЕЗ строки с ФИО.
+function extractTeacherFromLines(lines){
+  for(var i=0;i<lines.length;i++){
+    if(FIO_RE.test(lines[i])){
+      return {teacher: lines[i], rest: lines.slice(0,i).concat(lines.slice(i+1))};
+    }
+  }
+  return {teacher:'', rest: lines};
+}
+
+function cleanLine(l){ return l.replace(/[ \t]+/g,' ').trim(); }
+function cleanLines(text){
+  return String(text).replace(/\r/g,'').split('\n').map(cleanLine).filter(Boolean);
+}
+function isNoiseLine(l){ return /^(замена|отмена)\s*:?\s*$/i.test(l); }
+
+// Разбирает ОДИН "слот" — это либо всё содержимое ячейки целиком (если деления
+// на числитель/знаменатель нет), либо одна из половинок. Внутри слота отдельно
+// определяет: отменена ли пара, что именно отменили и чем заменили.
+// Реальный формат отмены (без пустой строки-разделителя):
+//   14.09 отмена СГЦ.03
+//   Физическая культура
+//   Лапин А.А.
+//   ОП.08                              <- отсюда начинается замена (новый код предмета)
+//   Энергоснабжение телекоммуникационных систем
+//   Черномырдин Д.А.
+function parseSlot(slotText){
+  var lines = cleanLines(slotText);
+  if(!lines.length) return {subject:'',cancelled:'',cancelDate:'',replacement:'',is_cancel:false};
+  var full = lines.join(' ');
+  var is_cancel = /отмен/i.test(full);
+  // доп. сигнал: строка целиком выделена красным цветом в таблице — тоже считаем отменой,
+  // даже если слова "отмена" в ней нет.
+  var redCi = -1;
+  if(!is_cancel && REDLINES.size){
+    for(var ri=0; ri<lines.length; ri++){ if(REDLINES.has(lines[ri])){ redCi=ri; is_cancel=true; break; } }
+  }
+  if(!is_cancel){
+    var tE = extractTeacherFromLines(lines);
+    return {subject: tE.rest.join(' · '), teacher: tE.teacher, cancelled:'', cancelDate:'', replacement:'', is_cancel:false};
+  }
+
+  var ci=-1;
+  for(var i=0;i<lines.length;i++){ if(/отмен/i.test(lines[i])){ci=i;break;} }
+  if(ci===-1) ci = redCi>=0 ? redCi : 0;
+
+  var cancelDate='';
+  var dm = lines[ci].match(/^(\d{1,2}[.\/]\d{2}(?:[.\/]\d{2,4})?)\s*/);
+  var cancelLine = lines[ci];
+  if(dm){ cancelDate=dm[1]; cancelLine=cancelLine.slice(dm[0].length); }
+  cancelLine = /отмен/i.test(cancelLine)
+    ? cancelLine.replace(/отмена\s*:?\s*/i,'').replace(/^[:·\-\s]+/,'').trim()
+    : cancelLine.trim();
+
+  var before = lines.slice(0,ci).filter(function(l){return !isNoiseLine(l);});
+  var after = lines.slice(ci+1).filter(function(l){return !isNoiseLine(l);});
+  if(!cancelLine && after.length){ cancelLine=after[0]; after=after.slice(1); }
+
+  // ищем, где в "after" начинается предмет-замена — первая строка с кодом предмета
+  var splitAt=-1;
+  for(var j=0;j<after.length;j++){ if(CODE.test(after[j])){splitAt=j;break;} }
+
+  var extra, replacementLines;
+  if(splitAt>=0){ extra=after.slice(0,splitAt); replacementLines=after.slice(splitAt); }
+  else{ extra=after; replacementLines=[]; }
+
+  var cancelledLinesArr = before.concat(cancelLine?[cancelLine]:[], extra).filter(Boolean);
+  var tOldE = extractTeacherFromLines(cancelledLinesArr);
+  var cancelled = tOldE.rest.join(' · ');
+  if(!cancelled) cancelled='пара отменена';
+
+  var tNewE = extractTeacherFromLines(replacementLines);
+  var replacement = tNewE.rest.join(' · ').replace(/\s+/g,' ').trim();
+
+  return {subject: replacement||'', teacherOld: tOldE.teacher, teacherNew: tNewE.teacher, cancelled:cancelled, cancelDate:cancelDate, replacement:replacement, is_cancel:true};
+}
+
+// Разбирает ячейку целиком. Числитель/знаменатель признаём РЕАЛЬНЫМ разделением
+// только когда есть явная пустая строка-разделитель и ОБЕ половинки сами по себе
+// начинаются с кода предмета — единственный надёжный сигнал, который не путается
+// с отменой+заменой одного предмета (где два кода идут подряд без пустой строки).
+// Каждая половинка при этом разбирается независимо — так что отмена/замена может
+// быть только в числителе, только в знаменателе, в обоих сразу или ни в одном.
+function parseCell(raw){
+  var empty={has_split:false, both:{subject:'',cancelled:'',cancelDate:'',replacement:'',is_cancel:false}};
+  if(!raw||!String(raw).trim())return empty;
+  var text=String(raw).replace(/\r/g,'');
+
+  var blocks=text.split(/\n\s*\n/).map(function(p){return p.trim();}).filter(Boolean);
+  if(blocks.length>=2){
+    // блок считаем самостоятельной половинкой (числитель/знаменатель), если он либо
+    // сам начинается с кода предмета, либо это блок с отменой (тогда код будет чуть
+    // дальше, после "дата+отмена") — так сплит не теряется, если отменена ровно одна
+    // из половинок.
+    function looksLikeSlot(block){
+      var firstLine = cleanLine((block.split('\n')[0]||''));
+      return CODE.test(firstLine) || /отмен/i.test(block);
+    }
+    // Делим РОВНО на 2 половинки: всё, КРОМЕ последнего блока — числитель, последний
+    // блок — знаменатель. Так не теряется структура, даже если внутри числителя
+    // случайно затесалась ещё одна пустая строка (например между "отмена" и заменой) —
+    // раньше в таком случае лишние блоки склеивались все вместе в один знаменатель.
+    var head = blocks.slice(0, -1).join('\n\n');
+    var tail = blocks[blocks.length-1];
+    if(looksLikeSlot(head) && looksLikeSlot(tail)){
+      return {has_split:true, numerator:parseSlot(head), denominator:parseSlot(tail)};
+    }
+  }
+  return {has_split:false, both:parseSlot(text)};
+}
+
+function emptySlot(){ return {subject:'',cancelled:'',cancelDate:'',replacement:'',is_cancel:false}; }
+
+// Приоритет технологий (именно в этом порядке, вторая не трогает решение первой):
+//  1) СТАРАЯ (текстовая): если контент реально есть В ОБЕИХ физических строках — это уже
+//     100% надёжный сигнал деления (сюда же попадает отмена+замена, записанная на 2 разные
+//     строки — старая технология внутри parseSlot её прекрасно разбирает). Если старая
+//     технология это увидела — используем её результат и НЕ трогаем дальше.
+//  2) НОВАЯ (по id ячейки времени/номера пары, colorHint): подключается только когда старая
+//     не может решить — т.е. ровно ОДНА из двух строк пустая, и непонятно, это "деление,
+//     но на этой неделе пары нет" или просто смерженный на 2 строки предмет.
+//     - 'split' (одинаковый id) → деление настоящее, пустая половинка = честное "нет пары".
+//     - 'merge' (разный id) или null (не удалось прочитать) → не делим, безопасный дефолт.
+function parseCellStructural(t0, t1, colorHint){
+  var has0 = t0 && String(t0).trim();
+  var has1 = t1 && String(t1).trim();
+
+  if(has0 && has1){
+    return {has_split:true, numerator:parseSlot(t0), denominator:parseSlot(t1)};
+  }
+  if(colorHint==='split'){
+    if(!has0 && !has1) return {has_split:false, both:emptySlot()};
+    return {has_split:true, numerator: has0?parseSlot(t0):emptySlot(), denominator: has1?parseSlot(t1):emptySlot()};
+  }
+  return {has_split:false, both:parseSlot(has0?t0:(has1?t1:''))};
+}
+
+function anyCancelled(p){
+  return p.has_split ? (p.numerator.is_cancel||p.denominator.is_cancel) : p.both.is_cancel;
+}
+function activeCancelled(p, isNum){
+  return p.has_split ? (isNum?p.numerator.is_cancel:p.denominator.is_cancel) : p.both.is_cancel;
+}
+
+/** Приводит ячейку «Дни» к виду «понедельник 14.09».
+ *  Нужно для xlsx, где вместо названия дня лежит дата/serial. */
+function normalizeDayCell(raw){
+  var d = String(raw || '').trim();
+  if(!d) return '';
+  if(/понедельник|вторник|среда|четверг|пятница|суббота|воскресенье/i.test(d)) return d;
+  // ISO / locale date strings
+  var m = d.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m){
+    return formatRuDayDate(new Date(+m[1], +m[2]-1, +m[3]));
+  }
+  m = d.match(/^(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?/);
+  if(m){
+    var y = m[3] ? (parseInt(m[3],10) < 100 ? 2000+parseInt(m[3],10) : parseInt(m[3],10)) : new Date().getFullYear();
+    return formatRuDayDate(new Date(y, parseInt(m[2],10)-1, parseInt(m[1],10)));
+  }
+  // Excel serial as plain number string
+  if(/^\d{5}(\.\d+)?$/.test(d)){
+    var n = parseFloat(d);
+    if(n > 30000 && n < 60000) return formatRuDayDate(excelSerialToDate(n));
+  }
+  return d;
+}
+
+function buildSchedule(rows){
+  var gRow=4;
+  for(var i=0;i<Math.min(10,rows.length);i++){
+    var jn=(rows[i]||[]).join(' ');
+    if(jn.indexOf('Аудитории')!==-1&&(rows[i]||[]).filter(function(c){return c&&c.trim();}).length>10){gRow=i;break;}
+  }
+  var groups=[];
+  (rows[gRow]||[]).forEach(function(cell,idx){
+    var name=(cell||'').trim();
+    if(name&&name!=='Аудитории')groups.push({col:idx,name:name});
+  });
+  if(!groups.length)throw new Error('Группы не найдены в таблице');
+
+  var dayStarts=[];
+  for(var di=gRow+1;di<rows.length;di++){
+    var d=normalizeDayCell(rows[di][0]||'');
+    if(d&&/понедельник|вторник|среда|четверг|пятница|суббота|воскресенье/i.test(d)){
+      dayStarts.push({row:di,name:d});
+    }
+  }
+  if(!dayStarts.length)throw new Error('Дни не найдены в таблице');
+
+  var schedule={};
+  groups.forEach(function(g){schedule[g.name]={};});
+
+  var teacherSet={};
+  var scheduleByTeacher={};
+
+  // Складывает разбор одной ячейки (p) в агрегатор преподавателей для этой пары (aggForSeg).
+  // aggForSeg[ФИО] = {num:[...], den:[...], both:[...]} — список записей по группам.
+  function regTeacher(aggForSeg, teacherName, half, entry){
+    if(!teacherName) return;
+    teacherSet[teacherName]=true;
+    if(!aggForSeg[teacherName]) aggForSeg[teacherName]={num:[],den:[],both:[]};
+    aggForSeg[teacherName][half].push(entry);
+  }
+  function regFromSlot(aggForSeg, slot, half, groupName, room){
+    if(!slot) return;
+    if(slot.is_cancel){
+      if(slot.teacherOld) regTeacher(aggForSeg, slot.teacherOld, half, {group:groupName, room:room, subject:'', cancelled:slot.cancelled, cancelDate:slot.cancelDate, is_cancel:true});
+      if(slot.teacherNew) regTeacher(aggForSeg, slot.teacherNew, half, {group:groupName, room:room, subject:slot.replacement, cancelled:'', cancelDate:'', is_cancel:false});
+    } else if(slot.teacher){
+      regTeacher(aggForSeg, slot.teacher, half, {group:groupName, room:room, subject:slot.subject, cancelled:'', cancelDate:'', is_cancel:false});
+    }
+  }
+  // Объединяет список записей одной "половинки" (числитель/знаменатель/цельная пара) для
+  // конкретного преподавателя — обычно одна запись (одна группа), но если он ведёт несколько
+  // групп/подгрупп одновременно, группы склеиваются через запятую.
+  function mergeTeacherEntries(list){
+    if(!list.length) return {subject:'',group:'',room:'',cancelled:'',cancelDate:'',is_cancel:false};
+    var groupsU=list.map(function(x){return x.group;}).filter(function(v,i,a){return v&&a.indexOf(v)===i;});
+    var subjU=list.map(function(x){return x.subject;}).filter(function(v,i,a){return v&&a.indexOf(v)===i;});
+    var cancelledU=list.map(function(x){return x.cancelled;}).filter(function(v,i,a){return v&&a.indexOf(v)===i;});
+    var cd=list.filter(function(x){return x.cancelDate;})[0];
+    return {
+      subject: subjU.join(' · '),
+      group: groupsU.join(', '),
+      room: pickRoom(list), // кабинет только ЭТОЙ половинки (числитель или знаменатель отдельно)
+      cancelled: cancelledU.join(' · '),
+      cancelDate: cd?cd.cancelDate:'',
+      is_cancel: !subjU.length && !!cancelledU.length
+    };
+  }
+  function pickRoom(list){
+    var rooms=list.map(function(x){return x.room;}).filter(function(v,i,a){return v&&a.indexOf(v)===i;});
+    return rooms.join(', ');
+  }
+
+  dayStarts.forEach(function(ds,dayIdx){
+    var start=ds.row;
+    var end=dayIdx+1<dayStarts.length?dayStarts[dayIdx+1].row:rows.length;
+
+    // Сегменты пар определяем ОДИН раз на весь день по столбцу номера пары (col[1]) —
+    // эта структура (сколько физических строк у каждой пары: 1 или 2 — т.е. есть ли
+    // строка-знаменатель под строкой-числителем) общая для всех групп, т.к. столбец
+    // номера/времени один на всю строку, а не per-группа.
+    var segs=[];
+    if(start<end){
+      var segStart=start, segNum=(rows[start][1]||'').trim();
+      for(var r=start+1;r<end;r++){
+        var n=(rows[r][1]||'').trim();
+        if(n){ segs.push({start:segStart,end:r,num:segNum}); segStart=r; segNum=n; }
+      }
+      segs.push({start:segStart,end:end,num:segNum});
+    }
+
+    // Реальность деления числитель/знаменатель определяем ПО КАЖДОЙ ГРУППЕ ОТДЕЛЬНО (не по
+    // общей ячейке номера/времени — она объединена ВСЕГДА для любой пары на 2 строки, вне
+    // зависимости от деления, так что по ней ничего не различить). Смотрим, объединена ли
+    // (одинаковый id) именно ЯЧЕЙКА ПРЕДМЕТА этой конкретной группы между строками seg.start
+    // и seg.start+1. Объединена (один и тот же id, "одна визуальная ячейка на 2 строки") =>
+    // предмет один, деления нет. Не объединена (у каждой строки своя, самостоятельная ячейка,
+    // пусть даже пустая текстом) => это настоящее деление на числитель/знаменатель.
+    function splitHintFor(seg, g){
+      if(seg.end-seg.start<2) return null;
+      if(XLSMERGES){
+        var carried = XLSMERGES[(seg.start+1)+','+g.col];
+        return carried ? 'merge' : 'split';
+      }
+      if(COLORGRID){
+        var cell0=COLORGRID[seg.start]&&COLORGRID[seg.start][g.col];
+        var cell1=COLORGRID[seg.start+1]&&COLORGRID[seg.start+1][g.col];
+        if(cell0&&cell1&&cell0.bg&&cell1.bg) return (cell0.bg===cell1.bg)?'merge':'split';
+      }
+      return null;
+    }
+    // Тот же вопрос ("одна объединённая ячейка на пару или две самостоятельные"), но
+    // для КОЛОНКИ КАБИНЕТА (g.col+1) — она объединяется независимо от колонки предмета:
+    // предмет вполне может быть разделён (две разные пары у числителя/знаменателя), а
+    // кабинет при этом общий один на обе половинки, и наоборот.
+    function roomMergeHintFor(seg, g){
+      if(seg.end-seg.start<2) return null;
+      if(XLSMERGES){
+        var carried = XLSMERGES[(seg.start+1)+','+(g.col+1)];
+        return carried ? 'merge' : 'split';
+      }
+      if(COLORGRID){
+        var cell0=COLORGRID[seg.start]&&COLORGRID[seg.start][g.col+1];
+        var cell1=COLORGRID[seg.start+1]&&COLORGRID[seg.start+1][g.col+1];
+        if(cell0&&cell1&&cell0.bg&&cell1.bg) return (cell0.bg===cell1.bg)?'merge':'split';
+      }
+      return null;
+    }
+
+    // По одному агрегатору преподавателей на каждую пару этого дня — заполняется всеми
+    // группами по очереди, потом сворачивается в scheduleByTeacher[ФИО][день].
+    var segAgg=segs.map(function(){return {};});
+
+    groups.forEach(function(g){
+      var lessons=segs.map(function(seg, segIdx){
+        var span=seg.end-seg.start;
+        var time=(rows[seg.start][2]||'').replace(/\n/g,' ').replace(/\s+/g,' ').trim();
+        var p, room='', roomNum='', roomDen='', raw0=null, raw1=null;
+        if(span<=1){
+          var raw=rows[seg.start][g.col]||'';
+          room=(rows[seg.start][g.col+1]||'').trim();
+          roomNum=room; roomDen=room;
+          p=parseCell(raw);
+          raw0=raw;
+        }else{
+          var t0=rows[seg.start][g.col]||'';
+          var t1=rows[seg.start+1][g.col]||'';
+          // Кабинет числителя и знаменателя — РАЗНЫЕ ячейки (строка seg.start и seg.start+1).
+          // Читаем их раздельно и решаем, нужно ли подстраховаться значением соседней
+          // строки, ТОЧНО ТАК ЖЕ, как для колонки предмета — по реальным merge-диапазонам
+          // xlsx (или, если их нет, по цвету фона): если ячейка кабинета внизу — это
+          // "продолжение" объединённой сверху (roomMergeHintFor==='merge'), значит кабинет
+          // физически один на пару и нижняя строка в CSV пустая не просто так — тогда
+          // подстраховываемся значением сверху. Если же ячейки кабинета самостоятельные
+          // ('split' или сигнал недоступен) — оставляем как есть, ничего не занимаем у
+          // соседней половинки, даже если она пустая: так не может повториться старый баг,
+          // когда у двух РАЗНЫХ кабинетов один перетирал другой.
+          roomNum=(rows[seg.start][g.col+1]||'').trim();
+          roomDen=(rows[seg.start+1][g.col+1]||'').trim();
+          for(var rr=seg.start+2; rr<seg.end; rr++){
+            var extra=rows[rr][g.col]||'';
+            if(String(extra).trim()) t1=t1?t1+'\n'+extra:extra;
+            var er=(rows[rr][g.col+1]||'').trim();
+            if(er&&!roomDen)roomDen=er;
+          }
+          if(roomMergeHintFor(seg,g)==='merge'){
+            if(!roomNum) roomNum=roomDen;
+            if(!roomDen) roomDen=roomNum;
+          }
+          room=roomNum||roomDen; // общий кабинет — только для НЕразделённой ("merge") пары
+          p=parseCellStructural(t0,t1,splitHintFor(seg,g));
+          raw0=t0; raw1=t1;
+        }
+        if(p.has_split){
+          regFromSlot(segAgg[segIdx], p.numerator, 'num', g.name, roomNum);
+          regFromSlot(segAgg[segIdx], p.denominator, 'den', g.name, roomDen);
+        } else {
+          regFromSlot(segAgg[segIdx], p.both, 'both', g.name, room);
+        }
+        return {num:seg.num,time:time,room:room,parsed:p,raw0:raw0,raw1:raw1};
+      }).filter(function(x){
+        if(x.room)return true;
+        var p=x.parsed;
+        if(p.has_split)return !!(p.numerator.subject||p.numerator.cancelled||p.denominator.subject||p.denominator.cancelled);
+        return !!(p.both.subject||p.both.cancelled);
+      });
+      schedule[g.name][ds.name]=lessons;
+    });
+
+    segs.forEach(function(seg, segIdx){
+      var aggForSeg=segAgg[segIdx];
+      var time=(rows[seg.start][2]||'').replace(/\n/g,' ').replace(/\s+/g,' ').trim();
+      Object.keys(aggForSeg).forEach(function(teacherName){
+        var e=aggForSeg[teacherName];
+        var hasSplit = e.num.length>0 || e.den.length>0;
+        var parsed;
+        if(hasSplit){
+          parsed={has_split:true, numerator:mergeTeacherEntries(e.num), denominator:mergeTeacherEntries(e.den)};
+        } else {
+          parsed={has_split:false, both:mergeTeacherEntries(e.both)};
+        }
+        var room = hasSplit ? '' : parsed.both.room; // при делении кабинет теперь только ВНУТРИ каждой половинки
+        if(!scheduleByTeacher[teacherName]) scheduleByTeacher[teacherName]={};
+        if(!scheduleByTeacher[teacherName][ds.name]) scheduleByTeacher[teacherName][ds.name]=[];
+        scheduleByTeacher[teacherName][ds.name].push({num:seg.num,time:time,room:room,parsed:parsed});
+      });
+    });
+  });
+
+  var teachersList=Object.keys(teacherSet).sort(function(a,b){return a.localeCompare(b,'ru');});
+
+  return {groups:groups.map(function(g){return g.name;}),
+          days:dayStarts.map(function(d){return d.name;}),
+          schedule:schedule,
+          teachers:teachersList,
+          scheduleByTeacher:scheduleByTeacher};
+}
+
+function parseTime(t){
+  if(!t)return null;
+  var m=t.match(/\d{1,2}[.:]\d{2}/g);
+  if(!m||m.length<2)return null;
+  function toMin(s){var p=s.split(/[.:]/);return parseInt(p[0],10)*60+parseInt(p[1],10);}
+  return {start:toMin(m[0]),end:toMin(m[m.length-1])};
+}
+
+/* неделя по дате (запасной авто-режим) */
+function weekByDate(){
+  var now=new Date();
+  var start=new Date(now.getFullYear(),0,1);
+  var week=Math.floor((now-start)/604800000);
+  return week%2===0; // true = числитель
+}
+function currentIsNum(){
+  if(weekTab==='num')return true;
+  if(weekTab==='den')return false;
+  if(detectedIsNum!==null)return detectedIsNum;
+  return weekByDate();
+}
+
+/* ================= ИНТЕРФЕЙС ================= */
+
+function shortWeekName(name){
+  if(!name) return '';
+  // даты вида 14.09-19.09 или 14.09.26-19.09.26
+  var m = String(name).match(/(\d{1,2}\.\d{2}(?:\.\d{2,4})?\s*[-–—]\s*\d{1,2}\.\d{2}(?:\.\d{2,4})?)/);
+  if(m) return m[1].replace(/\s+/g,'');
+  // убрать хвост про числитель/знаменатель
+  return String(name).replace(/\s*\([^)]*(числитель|знаменатель)[^)]*\)/ig,'').trim() || name;
+}
+function parseWeekRange(name){
+  var m = String(name).match(/(\d{1,2})\.(\d{2})(?:\.(\d{2,4}))?\s*[-–—]\s*(\d{1,2})\.(\d{2})(?:\.(\d{2,4}))?/);
+  if(!m) return null;
+  var y = new Date().getFullYear();
+  function yr(yy){
+    if(!yy) return y;
+    yy = parseInt(yy,10);
+    return yy < 100 ? 2000+yy : yy;
+  }
+  var y1 = yr(m[3]), y2 = yr(m[6]||m[3]);
+  var start = new Date(y1, parseInt(m[2],10)-1, parseInt(m[1],10));
+  var end = new Date(y2, parseInt(m[5],10)-1, parseInt(m[4],10));
+  end.setHours(23,59,59,999);
+  return {start:start, end:end};
+}
+function isPastWeek(name){
+  var r = parseWeekRange(name);
+  if(!r) return false;
+  return r.end.getTime() < Date.now();
+}
+function isCurrentWeek(name){
+  var r = parseWeekRange(name);
+  if(!r) return false;
+  var t = Date.now();
+  return t >= r.start.getTime() && t <= r.end.getTime();
+}
+function sortSheetsByDate(sheets){
+  return (sheets || []).slice().sort(function(a, b){
+    var ra = parseWeekRange(a.name), rb = parseWeekRange(b.name);
+    if(ra && rb) return ra.start.getTime() - rb.start.getTime();
+    if(ra) return -1;
+    if(rb) return 1;
+    return String(a.name).localeCompare(String(b.name), 'ru');
+  });
+}
+function findCurrentSheetName(sheets){
+  if(!sheets || !sheets.length) return '';
+  var list = sortSheetsByDate(sheets);
+  for(var i=0;i<list.length;i++){
+    if(isCurrentWeek(list[i].name)) return list[i].name;
+  }
+  // если текущей нет — ближайшая будущая
+  var best = null, bestT = Infinity;
+  var now = Date.now();
+  list.forEach(function(s){
+    var r = parseWeekRange(s.name);
+    if(r && r.start.getTime() >= now && r.start.getTime() < bestT){
+      bestT = r.start.getTime(); best = s.name;
+    }
+  });
+  if(best) return best;
+  // иначе последняя прошедшая (самая свежая)
+  var pastBest = null, pastT = -Infinity;
+  list.forEach(function(s){
+    var r = parseWeekRange(s.name);
+    if(r && r.end.getTime() < now && r.end.getTime() > pastT){
+      pastT = r.end.getTime(); pastBest = s.name;
+    }
+  });
+  return pastBest || list[list.length-1].name;
+}
+var showPastWeeks = false;
+try{ showPastWeeks = localStorage.getItem('rasp_show_past') === '1'; }catch(e){}
+
+var showPastDays = false;
+try{ showPastDays = localStorage.getItem('rasp_show_past_days') === '1'; }catch(e){}
+var ISO_DAY_ORDER = ['понедельник','вторник','среда','четверг','пятница','суббота','воскресенье'];
+function dayIsoIndex(name){
+  var low = (name||'').toLowerCase();
+  for(var i=0;i<ISO_DAY_ORDER.length;i++){
+    if(low.indexOf(ISO_DAY_ORDER[i])===0) return i;
+  }
+  return -1; // неизвестный формат — не скрываем
+}
+function bindPastDaysToggle(){
+  var chk = $('showPastDays');
+  if(!chk || chk._bound) return;
+  chk._bound = true;
+  chk.checked = !!showPastDays;
+  chk.onchange = function(){
+    showPastDays = !!chk.checked;
+    try{ localStorage.setItem('rasp_show_past_days', showPastDays ? '1' : '0'); }catch(e){}
+    if(DATA){ buildDays(); render(); }
+  };
+}
+
+function buildWeekTabs(){
+  if(!weekTabsEl) return;
+  var tabs=[
+    {id:'auto',label:'Всё'},
+    {id:'num',label:'Числитель'},
+    {id:'den',label:'Знаменатель'},
+    {id:'repl',label:'Замены'}
+  ];
+  weekTabsEl.innerHTML='';
+  tabs.forEach(function(t){
+    var el=document.createElement('div');
+    el.className='tab'+(weekTab===t.id?' on':'');
+    el.textContent=t.label;
+    el.onclick=function(){weekTab=t.id;buildWeekTabs();updateLoadInfo();render();};
+    weekTabsEl.appendChild(el);
+  });
+  var info='';
+  if(weekLabel) info='Неделя из таблицы: <b>'+esc(weekLabel)+'</b>';
+  else info='Неделя: <b>'+(currentIsNum()?'числитель':'знаменатель')+'</b> (по дате)';
+  if(weekTab==='repl') info+=' · только замены и отмены';
+  if(weekInfoEl) weekInfoEl.innerHTML=info;
+  updateLoadInfo();
+}
+
+function updateLoadInfo(){
+  if(!loadInfoEl) return;
+  var lines = [];
+  lines.push('Статус: <b>'+esc(statusEl.textContent||'—')+'</b>');
+  var proxy = null;
+  try{ proxy = localStorage.getItem('rasp_ok_proxy'); }catch(e){}
+  lines.push('Прокси: '+(proxy!==null ? '<b>#'+esc(proxy)+'</b> (запомнен)' : '<span class="bad">ещё не выбран</span>'));
+  var cache = null;
+  try{ cache = JSON.parse(localStorage.getItem(CACHE_KEY)||'null'); }catch(e){}
+  if(cache && cache.ts){
+    lines.push('Кэш: <b>'+esc(new Date(cache.ts).toLocaleString('ru-RU'))+'</b>'+
+      (cache.csv ? ' · '+Math.round(cache.csv.length/1024)+' КБ' : ''));
+  } else {
+    lines.push('Кэш: <span class="bad">пусто</span>');
+  }
+  if(XLSMERGES){
+    lines.push('xlsx-merge: <span class="ok">да</span>, ячеек в объединениях: <b>'+Object.keys(XLSMERGES).length+'</b>');
+  } else {
+    lines.push('xlsx-merge: <span class="bad">нет</span>');
+  }
+  if(LASTXLSXDIAG){
+    if(LASTXLSXDIAG.xlsxLibMissing) lines.push('xlsx: <span class="bad">библиотека не загрузилась</span>');
+    else if(LASTXLSXDIAG.fetchFailed) lines.push('xlsx: <span class="bad">'+esc(LASTXLSXDIAG.error||'ошибка')+'</span>');
+    else if(LASTXLSXDIAG.mergesCount!==undefined){
+      lines.push('лист: <b>'+esc(LASTXLSXDIAG.sheetName||'')+'</b>, объединений: <b>'+LASTXLSXDIAG.mergesCount+'</b>');
+    }
+  }
+  loadInfoEl.innerHTML = lines.join('<br>');
+}
+
+function applyTheme(){
+  if(themeMode==='dark' || themeMode==='brown' || themeMode==='orange' || themeMode==='black') themeMode='violet';
+  document.documentElement.setAttribute('data-theme', themeMode);
+  try{ localStorage.setItem('rasp_theme', themeMode); }catch(e){}
+}
+function applyAnim(){
+  document.documentElement.setAttribute('data-anim', animMode);
+  try{ localStorage.setItem('rasp_anim', animMode); }catch(e){}
+}
+
+function hexOk(h){ return /^#[0-9a-fA-F]{6}$/.test(h); }
+function applyCustomColors(){
+  var root = document.documentElement;
+  if(!customColors){
+    ['--bg','--panel','--panel2','--text','--acc','--acc2','--top'].forEach(function(v){
+      root.style.removeProperty(v);
+    });
+  } else {
+    if(customColors.bg){
+      root.style.setProperty('--bg', customColors.bg);
+      root.style.setProperty('--top', customColors.bg);
+    }
+    if(customColors.panel){
+      root.style.setProperty('--panel', customColors.panel);
+      root.style.setProperty('--panel2', customColors.panel);
+    }
+    if(customColors.text) root.style.setProperty('--text', customColors.text);
+    if(customColors.acc) root.style.setProperty('--acc', customColors.acc);
+    if(customColors.acc2) root.style.setProperty('--acc2', customColors.acc2);
+  }
+  // Направление градиента (ползунок) должно работать всегда — и со своими
+  // цветами, и с обычными пресетами темы, поэтому --btn-grad выставляем
+  // безусловно, а не только внутри ветки customColors.
+  var a1 = (customColors && customColors.acc) || getComputedStyle(root).getPropertyValue('--acc').trim();
+  var a2 = (customColors && customColors.acc2) || getComputedStyle(root).getPropertyValue('--acc2').trim();
+  root.style.setProperty('--btn-grad', 'linear-gradient('+gradAngle+'deg,'+a1+','+a2+')');
+  root.style.setProperty('--grad', (a1||'').replace(')', ',.12)').replace('rgb', 'rgba'));
+  updateGradPreview();
+}
+function updateGradPreview(){
+  var el = $('gradPreview');
+  if(!el) return;
+  var a1 = (customColors && customColors.acc) || getComputedStyle(document.documentElement).getPropertyValue('--acc').trim() || '#4f8cff';
+  var a2 = (customColors && customColors.acc2) || getComputedStyle(document.documentElement).getPropertyValue('--acc2').trim() || '#8b5cf6';
+  el.style.background = 'linear-gradient('+gradAngle+'deg,'+a1+','+a2+')';
+}
+function saveCustomColors(){
+  try{
+    if(customColors) localStorage.setItem('rasp_colors', JSON.stringify(customColors));
+    else localStorage.removeItem('rasp_colors');
+    localStorage.setItem('rasp_grad', String(gradAngle));
+  }catch(e){}
+}
+function syncColorInputs(){
+  var map = [
+    ['cBg','cBgHex','bg','--bg'],
+    ['cPanel','cPanelHex','panel','--panel'],
+    ['cText','cTextHex','text','--text'],
+    ['cAcc','cAccHex','acc','--acc'],
+    ['cAcc2','cAcc2Hex','acc2','--acc2']
+  ];
+  var root = document.documentElement;
+  map.forEach(function(row){
+    var col = $(row[0]), hex = $(row[1]);
+    if(!col || !hex) return;
+    var val = (customColors && customColors[row[2]]) || getComputedStyle(root).getPropertyValue(row[3]).trim();
+    if(val && val.charAt(0) !== '#'){
+      // skip non-hex computed
+      val = col.value || '#888888';
+    }
+    if(val && hexOk(val)){ col.value = val; hex.value = val; }
+  });
+  updateGradPreview();
+  buildGradTabs();
+}
+function bindColorPanel(){
+  var pairs = [
+    ['cBg','cBgHex','bg'],
+    ['cPanel','cPanelHex','panel'],
+    ['cText','cTextHex','text'],
+    ['cAcc','cAccHex','acc'],
+    ['cAcc2','cAcc2Hex','acc2']
+  ];
+  pairs.forEach(function(p){
+    var col=$(p[0]), hex=$(p[1]), key=p[2];
+    if(!col || !hex) return;
+    function setVal(v){
+      if(!hexOk(v)) return;
+      if(!customColors) customColors = {};
+      customColors[key] = v.toLowerCase();
+      col.value = v;
+      hex.value = v;
+      applyCustomColors();
+      saveCustomColors();
+    }
+    col.oninput = function(){ setVal(col.value); };
+    hex.onchange = hex.onkeydown = function(e){
+      if(e.type==='keydown' && e.key!=='Enter') return;
+      var v = hex.value.trim();
+      if(v.charAt(0)!=='#') v = '#'+v;
+      setVal(v);
+    };
+  });
+  var resetBtn = $('resetColors');
+  if(resetBtn){
+    resetBtn.onclick = function(){
+      customColors = null;
+      saveCustomColors();
+      applyCustomColors();
+      applyTheme();
+      syncColorInputs();
+    };
+  }
+}
+function buildGradTabs(){
+  var sl = $('gradSlider');
+  var val = $('gradSliderVal');
+  if(!sl) return;
+  sl.value = String(gradAngle || 90);
+  if(val) val.textContent = 'Направление: ' + sl.value + '°';
+  sl.oninput = function(){
+    gradAngle = String(sl.value);
+    if(val) val.textContent = 'Направление: ' + gradAngle + '°';
+    applyCustomColors();
+    saveCustomColors();
+  };
+}
+
+function buildModeTabs(){
+  if(themeTabsEl){
+    var themes=[
+      {id:'violet',label:'Синяя'},
+      {id:'claude',label:'Оранжевая'},
+      {id:'light',label:'Бело-чёрная'},
+      {id:'bw',label:'Чёрно-белая'}
+    ];
+    themeTabsEl.innerHTML='';
+    themes.forEach(function(t){
+      var el=document.createElement('div');
+      el.className='tab'+(themeMode===t.id?' on':'');
+      el.textContent=t.label;
+      el.onclick=function(){ themeMode=t.id; applyTheme(); applyCustomColors(); buildModeTabs(); };
+      themeTabsEl.appendChild(el);
+    });
+  }
+
+  if(animTabsEl){
+    var anims=[
+      {id:'off',label:'Выкл'},
+      {id:'fast',label:'Быстро'},
+      {id:'normal',label:'Обычн.'},
+      {id:'smooth',label:'Плавно'}
+    ];
+    animTabsEl.innerHTML='';
+    anims.forEach(function(t){
+      var el=document.createElement('div');
+      el.className='tab'+(animMode===t.id?' on':'');
+      el.textContent=t.label;
+      el.onclick=function(){ animMode=t.id; applyAnim(); buildModeTabs(); };
+      animTabsEl.appendChild(el);
+    });
+  }
+
+  var views=[{id:'cards',label:'Карточки'},{id:'table',label:'Таблица'}];
+  if(viewTabsEl){
+    viewTabsEl.innerHTML='';
+    views.forEach(function(t){
+      var el=document.createElement('div');
+      el.className='tab'+(viewMode===t.id?' on':'');
+      el.textContent=t.label;
+      el.onclick=function(){viewMode=t.id;localStorage.setItem('rasp_view',viewMode);buildModeTabs();render();};
+      viewTabsEl.appendChild(el);
+    });
+  }
+
+  var nums=[{id:'sheet',label:'№ как в файле'},{id:'seq',label:'№ по порядку'}];
+  if(numTabsEl){
+    numTabsEl.innerHTML='';
+    nums.forEach(function(t){
+      var el=document.createElement('div');
+      el.className='tab'+(numMode===t.id?' on':'');
+      el.textContent=t.label;
+      el.onclick=function(){numMode=t.id;localStorage.setItem('rasp_num',numMode);buildModeTabs();render();};
+      numTabsEl.appendChild(el);
+    });
+  }
+}
+
+
+function lessonState(timeStr){
+  var t = parseTime(timeStr);
+  if(!t) return '';
+  var mins = new Date().getHours()*60 + new Date().getMinutes();
+  if(mins >= t.start && mins < t.end) return 'now';
+  if(mins < t.start) return 'upcoming';
+  return 'past';
+}
+function findNowNext(lessons){
+  var nowL = null, nextL = null;
+  for(var i=0;i<lessons.length;i++){
+    var st = lessonState(lessons[i].time);
+    if(st === 'now'){ nowL = lessons[i]; break; }
+    if(st === 'upcoming' && !nextL) nextL = lessons[i];
+  }
+  return {now: nowL, next: nextL};
+}
+/** Статичные 7 кнопок: понедельник … воскресенье */
+var STATIC_DAYS = ['понедельник','вторник','среда','четверг','пятница','суббота','воскресенье'];
+var dayLabel = ''; // подпись вкладки (намертво): понедельник/вторник/…
+
+/**
+ * Дата для вкладки из календаря недели (имя листа «14.09-19.09…»).
+ * понедельник = первый день диапазона (или понедельник этой недели), далее +1 день.
+ */
+function calendarDateForLabel(label){
+  var idx = STATIC_DAYS.indexOf(label);
+  if(idx < 0) return '';
+  var r = parseWeekRange(currentSheetName || '');
+  if(!r || !r.start) return '';
+  var start = new Date(r.start.getFullYear(), r.start.getMonth(), r.start.getDate());
+  // сдвигаем к понедельнику этой недели (если диапазон уже с пн — сдвиг 0)
+  var startIso = (start.getDay() + 6) % 7; // 0=пн … 6=вс
+  var monday = new Date(start);
+  monday.setDate(start.getDate() - startIso);
+  var d = new Date(monday);
+  d.setDate(monday.getDate() + idx);
+  var dd = d.getDate();
+  var mm = d.getMonth() + 1;
+  return (dd < 10 ? '0'+dd : ''+dd) + '.' + (mm < 10 ? '0'+mm : ''+mm);
+}
+
+/**
+ * Прямая привязка: кнопка i → DATA.days[i] (порядок в таблице).
+ * Не гадаем по тексту ячейки — только индекс.
+ */
+function dataDayForLabel(label){
+  var idx = STATIC_DAYS.indexOf(label);
+  if(idx < 0) return label;
+  if(DATA && DATA.days && DATA.days[idx]) return DATA.days[idx];
+  return label;
+}
+
+/** Заголовок: имя вкладки + дата из календаря недели (намертво) */
+function dayTitleText(){
+  var lab = dayLabel || '';
+  var dt = calendarDateForLabel(lab);
+  if(lab && dt) return lab + ' ' + dt;
+  return lab || '';
+}
+
+function goToday(){
+  if(!DATA) return;
+  var order = ['воскресенье','понедельник','вторник','среда','четверг','пятница','суббота'];
+  var todayName = order[new Date().getDay()];
+  var all = daysEl.querySelectorAll('.day-btn');
+  var found = null;
+  for(var k=0;k<all.length;k++){
+    if((all[k].dataset.weekday||'') === todayName){ found = all[k]; break; }
+  }
+  if(!found){ setStatus('Сегодня нет в расписании'); return; }
+  for(var k2=0;k2<all.length;k2++) all[k2].classList.toggle('on', all[k2]===found);
+  dayLabel = todayName;
+  day = dataDayForLabel(todayName);
+  render();
+}
+
+function buildDays(){
+  daysEl.innerHTML='';
+  var jsDay=new Date().getDay(); // 0=вс
+  var todayIso=(jsDay+6)%7; // 0=пн ... 6=вс
+  var order=['воскресенье','понедельник','вторник','среда','четверг','пятница','суббота'];
+  var todayName=order[jsDay];
+
+  var activeDay = null;
+  var firstVisible = null;
+
+  STATIC_DAYS.forEach(function(label, i){
+    // скрыть прошедшие, если тумблер выключен
+    if(!showPastDays && i < todayIso) return;
+
+    var dataDay = dataDayForLabel(label);
+    var b=document.createElement('button');
+    b.type='button';
+    b.className='day-btn';
+    b.dataset.weekday=label;
+    b.dataset.day=dataDay;
+    b.textContent=label;
+    if(label === todayName){
+      b.classList.add('on');
+      activeDay = dataDay;
+      dayLabel = label;
+    }
+    if(!firstVisible) firstVisible = dataDay;
+    b.onclick=function(){
+      var all=daysEl.querySelectorAll('.day-btn');
+      for(var k=0;k<all.length;k++)all[k].classList.remove('on');
+      b.classList.add('on');
+      dayLabel = label;
+      day = dataDayForLabel(label);
+      render();
+    };
+    daysEl.appendChild(b);
+  });
+
+  if(!activeDay){
+    var firstBtn = daysEl.querySelector('.day-btn');
+    if(firstBtn){
+      firstBtn.classList.add('on');
+      activeDay = firstBtn.dataset.day;
+      if(!dayLabel) dayLabel = firstBtn.dataset.weekday || STATIC_DAYS[0];
+    }
+  }
+  if(!dayLabel){
+    dayLabel = todayName;
+    // если сегодня скрыт — первая видимая вкладка
+    var fb = daysEl.querySelector('.day-btn');
+    if(fb && fb.dataset.weekday) dayLabel = fb.dataset.weekday;
+  }
+  day = activeDay || firstVisible || dataDayForLabel(dayLabel);
+}
+
+function grpLine(slot){
+  return slot.group ? '<div class="grp">Группа: <b>'+esc(slot.group)+'</b></div>' : '';
+}
+function roomLine(slot){
+  return slot.room ? '<div class="room">Ауд. <b>'+esc(slot.room)+'</b></div>' : '';
+}
+
+function slotHtml(slot, label, cls, isActive){
+  var lab = label + (isActive?' · сейчас':'');
+  if(slot.is_cancel){
+    var dateTxt = slot.cancelDate ? ' ('+esc(slot.cancelDate)+')' : '';
+    return '<div class="blk blk-bad"><div class="lab">'+lab+' · ❌ отмена'+dateTxt+'</div>'+grpLine(slot)+'<div class="txt">'+esc(slot.cancelled)+'</div></div>';
+  }
+  if(!slot.subject){
+    return '<div class="blk '+cls+'"><div class="lab">'+lab+'</div><div class="txt" style="font-style:italic">нет пары</div></div>';
+  }
+  return '<div class="blk '+cls+'"><div class="lab">'+lab+'</div>'+grpLine(slot)+'<div class="txt">'+esc(slot.subject)+'</div>'+roomLine(slot)+'</div>';
+}
+
+function render(){
+  if(!DATA||!teacher)return;
+  buildWeekTabs();
+  buildModeTabs();
+  dtitleEl.textContent=dayTitleText();
+
+  if(viewMode==='table'){
+    contentWrapEl.classList.add('full');
+    listEl.innerHTML = renderSheetEmbed();
+    return;
+  }
+  contentWrapEl.classList.remove('full');
+
+  var all=(DATA.scheduleByTeacher[teacher]&&DATA.scheduleByTeacher[teacher][day])||[];
+  var isNum=currentIsNum();
+
+  var lessons=all.filter(function(l){
+    if(weekTab!=='repl')return true;
+    return anyCancelled(l.parsed);
+  });
+
+  if(!lessons.length){
+    listEl.innerHTML='<div class="empty">'+(weekTab==='repl'?'Замен и отмен на этот день нет':'Нет занятий')+'</div>';
+    return;
+  }
+
+  // Нумерация: либо как в файле (l.num), либо сквозная от 1 по факту показанных пар.
+  lessons.forEach(function(l,idx){
+    l.displayNum = (numMode==='seq') ? String(idx+1) : (l.num||String(idx+1));
+  });
+
+  listEl.innerHTML = '<div class="list-fade">'+renderCards(lessons,isNum)+'</div>';
+}
+
+
+// Показываем настоящую гугл-таблицу ВНУТРИ приложения (не браузерная вкладка) —
+// почти на весь экран, закруглённые края, шапка с заголовком/настройками остаётся видна.
+function renderSheetEmbed(){
+  var src = 'https://docs.google.com/spreadsheets/d/'+SHEET+'/htmlview';
+  return '<iframe src="'+src+'" style="display:block;width:100%;height:calc(100vh - 200px);border:1px solid var(--line);border-radius:14px;background:#fff" loading="lazy"></iframe>'+
+    '<div style="text-align:center;padding:8px;font-size:11px;color:var(--muted)">Если таблица не показалась — <a href="'+src+'" target="_blank" rel="noopener" style="color:var(--acc)">открыть отдельно ↗</a></div>';
+}
+
+function renderCards(lessons,isNum){
+  var html='';
+  var order=['воскресенье','понедельник','вторник','среда','четверг','пятница','суббота'];
+  var isToday = dayLabel && dayLabel === order[new Date().getDay()];
+  var nn = findNowNext(lessons);
+  if(isToday){
+    if(nn.now){
+      html += '<div class="now-banner">Сейчас: <b>'+esc(nn.now.displayNum||nn.now.num||'')+' пара</b> · '+esc(nn.now.time||'')+'</div>';
+    } else if(nn.next){
+      var t = parseTime(nn.next.time);
+      var mins = new Date().getHours()*60+new Date().getMinutes();
+      var left = t ? (t.start - mins) : null;
+      html += '<div class="now-banner">Дальше: <b>'+esc(nn.next.displayNum||nn.next.num||'')+' пара</b> · '+esc(nn.next.time||'')+
+        (left!=null && left>0 ? ' · через '+left+' мин' : '')+'</div>';
+    } else if(lessons.length){
+      html += '<div class="now-banner">На сегодня пары уже закончились</div>';
+    }
+  }
+  for(var i=0;i<lessons.length;i++){
+    var l=lessons[i];
+    if(i>0){
+      var a=parseTime(lessons[i-1].time),b=parseTime(l.time);
+      if(a&&b&&b.start-a.end>5)html+='<div class="break">перемена '+(b.start-a.end)+' мин</div>';
+    }
+    var p=l.parsed;
+    // Маленький бейдж «отмена» только если отмена без замены
+    var act = p.has_split ? (isNum ? p.numerator : p.denominator) : p.both;
+    var isCancelNow = !!(act && act.is_cancel && !act.replacement);
+    var st = isToday ? lessonState(l.time) : '';
+    var cls='lesson'+(isCancelNow?' cancel':'')+(st==='now'?' now':'')+(st==='upcoming'&&nn.next===l?' next':'');
+    var badge=isCancelNow?'<span class="tag cancel">отмена</span>':(st==='now'?'<span class="tag" style="background:var(--ok);color:#06251b">сейчас</span>':'');
+    var body='';
+
+    if(p.has_split){
+      if(weekTab==='num'){
+        body+=slotHtml(p.numerator,'📘 Числитель','blk-num',true);
+      }else if(weekTab==='den'){
+        body+=slotHtml(p.denominator,'📗 Знаменатель','blk-den',true);
+      }else{
+        body+=slotHtml(p.numerator,'📘 Числитель','blk-num',isNum);
+        body+=slotHtml(p.denominator,'📗 Знаменатель','blk-den',!isNum);
+      }
+    }
+    else if(p.both.is_cancel){
+      var dateTxt=p.both.cancelDate?' ('+esc(p.both.cancelDate)+')':'';
+      body+='<div class="blk blk-bad"><div class="lab">❌ Отменено'+dateTxt+'</div>'+grpLine(p.both)+'<div class="txt">'+esc(p.both.cancelled)+'</div></div>';
+    }
+    else{
+      body+=grpLine(p.both)+'<div class="subj">'+esc(p.both.subject||'—')+'</div>';
+    }
+
+    if(l.room)body+='<div class="room">Ауд. <b>'+esc(l.room)+'</b></div>';
+    html+='<div class="'+cls+'"><div class="lh"><span class="lnum">'+(l.displayNum?l.displayNum+' пара':'')+badge+'</span><span class="ltime">'+esc(l.time||'')+'</span></div>'+body+'</div>';
+  }
+  return html;
+}
+
+/* ================= ЗАПУСК ================= */
+var lastCsvText = null;
+
+function applyData(csvText){
+  lastCsvText = csvText;
+  var rows=parseCSV(csvText);
+  DATA=buildSchedule(rows);
+
+  grpEl.innerHTML='';
+  opts=[];
+  DATA.teachers.forEach(function(t){
+    var o=document.createElement('option');
+    o.value=t;o.textContent=t;
+    grpEl.appendChild(o);opts.push(o);
+  });
+  var saved=localStorage.getItem('rasp_teacher');
+  teacher=(saved&&DATA.teachers.indexOf(saved)>=0)?saved:DATA.teachers[0];
+  grpEl.value=teacher;
+
+  buildDays();
+  qEl.disabled=false;grpEl.disabled=false;
+  render();
+}
+
+// Пересчитывает расписание из уже загруженного CSV, но НЕ трогает выбранные
+// пользователем группу/день — используется, когда позже подъехали красные строки.
+function rebuildDataKeepSelection(){
+  if(!lastCsvText) return;
+  try{
+    DATA = buildSchedule(parseCSV(lastCsvText));
+    render();
+  }catch(e){}
+}
+
+function load(force){
+  setStatus(force?'Обновляю...':'Загрузка...');
+  qEl.disabled=true;grpEl.disabled=true;
+  if(force) sheetDataReady = false;
+  if(!DATA || force) showLoading(force ? 'Обновляю расписание…' : 'Загружаю расписание…');
+
+  // 1) Мгновенно показать даже просроченный кэш (чтобы не белый экран)
+  if(!force && !DATA){
+    var stale = readCache();
+    if(stale && stale.csv){
+      try{
+        if(stale.merges) XLSMERGES = stale.merges;
+        if(stale.xlsxDiag) LASTXLSXDIAG = stale.xlsxDiag;
+        applyData(stale.csv);
+        setStatus('Из кэша · обновляю…');
+      }catch(e){}
+    }
+  }
+
+  // 2) CSV (fallback) + xlsx + htmlview-список недель — параллельно
+  var csvP = fetchCSV(force);
+  var xlsxP = fetchXlsxMerges();
+  var htmlSheetsP = fetchSheetListFromHtml();
+
+  csvP.then(function(r){
+    // CSV — только запасной вариант. Если уже применили выбранный лист из xlsx —
+    // CSV не трогаем, иначе он перезапишет другую неделю (дефолтный export Google).
+    if(sheetDataReady) return;
+    try{
+      applyData(r.csv);
+      setStatus(r.fromCache ? 'Из кэша · проверяю обновления…' : ('Обновлено: '+new Date().toLocaleString('ru-RU')));
+    }catch(e){ throw e; }
+    if(r.fromCache && !force && !sheetDataReady){
+      fetchThroughProxies(CSV_URL, 6000).then(function(csv){
+        if(sheetDataReady) return;
+        writeCache(csv, undefined, undefined);
+        applyData(csv);
+        setStatus('Обновлено: '+new Date().toLocaleString('ru-RU'));
+      }).catch(function(){});
+    }
+  }).catch(function(e){
+    console.error(e);
+    if(!DATA){
+      setStatus('Ошибка загрузки',true);
+      listEl.innerHTML='<div class="errbox">Не удалось загрузить расписание.<br><br>'+
+        esc(e && e.message ? e.message : String(e))+
+        '<br><br>Проверь интернет и нажми «Обновить».</div>';
+    } else {
+      setStatus('Офлайн · показан кэш', true);
+    }
+  });
+
+  Promise.all([xlsxP, htmlSheetsP]).then(function(pair){
+    var x = pair[0] || {};
+    var htmlSheets = pair[1] || [];
+    LASTXLSXDIAG = x.diag || null;
+
+    var sheets = [];
+    var seen = {};
+    function addSheet(s){
+      if(!s || !s.name || seen[s.name]) return;
+      var sk = shortWeekName(s.name);
+      if(sk && seen['~'+sk]) return;
+      seen[s.name] = true;
+      if(sk) seen['~'+sk] = true;
+      sheets.push(s);
+    }
+    (x.sheets || []).forEach(addSheet);
+    htmlSheets.forEach(addSheet);
+    sheets = sortSheetsByDate(sheets);
+
+    if(sheets.length){
+      var names = sheets.map(function(s){ return s.name; });
+      if(currentSheetName && names.indexOf(currentSheetName) < 0){
+        var curShort = shortWeekName(currentSheetName);
+        var matched = '';
+        for(var i=0;i<sheets.length;i++){
+          if(shortWeekName(sheets[i].name) === curShort){ matched = sheets[i].name; break; }
+        }
+        currentSheetName = matched;
+      }
+      if(!currentSheetName){
+        currentSheetName = findCurrentSheetName(sheets) || (sheets[0] && sheets[0].name) || '';
+        try{ localStorage.setItem('rasp_sheet', currentSheetName); }catch(e){}
+      }
+      buildSheetSelect(sheets);
+
+      var applied = false;
+      if(currentSheetName && LAST_WB && resolveWbSheetName(currentSheetName)){
+        applyDetectedWeekType(currentSheetName);
+        var csv = csvFromWorkbook(currentSheetName);
+        var mrg = mergesFromWorkbook(currentSheetName);
+        if(mrg) XLSMERGES = mrg;
+        if(csv && csv.length > 100){
+          writeCache(csv, mrg, x.diag);
+          try{
+            applyData(csv);
+            sheetDataReady = true;
+            applied = true;
+            setStatus('Неделя: '+shortWeekName(currentSheetName)+' · '+new Date().toLocaleString('ru-RU'));
+          }catch(e){}
+        }
+      }
+      if(!applied && currentSheetName){
+        var gidUrl = csvUrlForSheet(currentSheetName);
+        if(gidUrl){
+          fetchThroughProxies(gidUrl, 10000).then(function(text){
+            if(sheetDataReady) return;
+            if(!text || text.length < 100) return;
+            writeCache(text, undefined, {sheetName: currentSheetName, via: 'gid'});
+            try{
+              applyData(text);
+              sheetDataReady = true;
+              setStatus('Неделя: '+shortWeekName(currentSheetName)+' · '+new Date().toLocaleString('ru-RU'));
+            }catch(e){}
+          }).catch(function(){});
+        }
+      }
+      updateWeekLabelMain();
+      buildWeekTabs();
+    } else if(x.merges){
+      XLSMERGES = x.merges;
+      writeCache(undefined, x.merges, x.diag);
+      rebuildDataKeepSelection();
+    } else if(DATA){
+      render();
+    }
+  });
+}
+
+qEl.addEventListener('input',function(){
+  if(!DATA)return;
+  var qq=qEl.value.toLowerCase().trim(),first=null;
+  opts.forEach(function(o){
+    var ok=!qq||o.value.toLowerCase().indexOf(qq)>=0;
+    o.hidden=!ok;
+    if(ok&&!first)first=o;
+  });
+  if(first){
+    grpEl.value=first.value;teacher=first.value;
+    localStorage.setItem('rasp_teacher',teacher);
+    render();
+  }
+});
+grpEl.onchange=function(){
+  teacher=grpEl.value;
+  localStorage.setItem('rasp_teacher',teacher);
+  render();
+};
+$('ref').onclick=function(){load(true);};
+var btnTodayEl=$('btnToday');
+if(btnTodayEl) btnTodayEl.onclick=goToday;
+
+$('clearCache').onclick=function(){
+  try{ localStorage.removeItem(cacheKey()); localStorage.removeItem(CACHE_KEY); localStorage.removeItem('rasp_ok_proxy'); }catch(e){}
+  setStatus('Кэш очищен');
+  load(true);
+};
+
+applyTheme();
+applyAnim();
+applyCustomColors();
+bindColorPanel();
+bindPastDaysToggle();
+bindPwToggle();
+bindPwGate();
+buildWeekTabs();
+buildModeTabs();
+syncColorInputs();
+
+if(pwRequired && !pwUnlocked){
+  showPwGate();
+} else {
+  load(false);
+}
+})();
+</script>
+
+</body>
+</html>
